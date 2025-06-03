@@ -108,6 +108,10 @@ func (d *Debugger) Publish(msg any, formats ...any) error {
 		err = fmt.Errorf(fmt.Sprint(msg), formats...)
 	}
 
+	if err == nil {
+		return err
+	}
+
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
