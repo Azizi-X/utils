@@ -92,10 +92,6 @@ func (d *Debugger) MakeStack(err error, skip int) Stack {
 	}
 }
 
-func (d *Debugger) Error(msg any, formats ...any) error {
-	return d.Publish(msg, formats...)
-}
-
 func (d *Debugger) Publish(msg any, formats ...any) error {
 	var err error
 
