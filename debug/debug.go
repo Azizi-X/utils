@@ -119,7 +119,7 @@ func (d *Debugger) Publish(msg any, formats ...any) error {
 	stack := d.MakeStack(err, 4)
 
 	for _, callback := range d.callback {
-		callback(err, stack)
+		go callback(err, stack)
 	}
 	return err
 }
