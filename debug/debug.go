@@ -44,6 +44,10 @@ type StackFrame struct {
 }
 
 func (d *Debugger) frames(skip int) (stack []StackFrame) {
+	if d == nil {
+		return nil
+	}
+
 	pc := make([]uintptr, d.maxDepth)
 	n := runtime.Callers(skip, pc)
 	frames := runtime.CallersFrames(pc[:n])
@@ -64,6 +68,10 @@ func (d *Debugger) frames(skip int) (stack []StackFrame) {
 }
 
 func (d *Debugger) memStats() MemStats {
+	if d == nil {
+		return MemStats{}
+	}
+
 	var stats runtime.MemStats
 	runtime.ReadMemStats(&stats)
 
@@ -80,7 +88,6 @@ func (d *Debugger) memStats() MemStats {
 }
 
 func (d *Debugger) MakeStack(err error, skip int) Stack {
-
 	frames := d.frames(skip)
 	memStats := d.memStats()
 
@@ -93,6 +100,10 @@ func (d *Debugger) MakeStack(err error, skip int) Stack {
 }
 
 func (d *Debugger) Publish(msg any, formats ...any) error {
+	if d == nil {
+		return nil
+	}
+
 	var err error
 
 	switch v := msg.(type) {
