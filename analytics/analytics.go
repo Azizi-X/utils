@@ -9,7 +9,7 @@ import (
 
 type analytics struct {
 	debounce func(f func())
-	callback func(t string, properties []byte, raw []byte)
+	callback func(t string, properties []byte, raw []byte) error
 }
 
 func (a *analytics) WithDebounce(after time.Duration) *analytics {
@@ -17,7 +17,7 @@ func (a *analytics) WithDebounce(after time.Duration) *analytics {
 	return a
 }
 
-func (a *analytics) SetCallback(callback func(t string, properties []byte, raw []byte)) *analytics {
+func (a *analytics) SetCallback(callback func(t string, properties []byte, raw []byte) error) *analytics {
 	a.callback = callback
 	return a
 }
