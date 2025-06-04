@@ -12,6 +12,11 @@ type analytics struct {
 	callback func(t string, properties []byte, raw []byte)
 }
 
+func (a *analytics) WithDebounce(after time.Duration) *analytics {
+	a.debounce = utils.NewDebouncer(after)
+	return a
+}
+
 func (a *analytics) SetCallback(callback func(t string, properties []byte, raw []byte)) *analytics {
 	a.callback = callback
 	return a
@@ -37,8 +42,6 @@ func (a *analytics) Handle(data []byte) error {
 	return err
 }
 
-func NewAnalytics(after time.Duration) *analytics {
-	return &analytics{
-		debounce: utils.NewDebouncer(after),
-	}
+func NewAnalytics() *analytics {
+	return &analytics{}
 }
