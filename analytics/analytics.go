@@ -1,6 +1,7 @@
 package analytics
 
 import (
+	"errors"
 	"time"
 
 	"github.com/Azizi-X/utils"
@@ -23,6 +24,10 @@ func (a *analytics) SetCallback(callback func(t string, properties []byte, raw [
 }
 
 func (a *analytics) Handle(data []byte) error {
+	if a.callback == nil {
+		return errors.New("callback is not set")
+	}
+
 	var err error
 
 	if _, err := jsonparser.ArrayEach(data, func(value []byte, dataType jsonparser.ValueType, offset int, err error) {
