@@ -23,7 +23,7 @@ type Event struct {
 	Properties any    `json:"properties"`
 }
 
-type analytics struct {
+type Analytics struct {
 	debounce func(f func())
 	callback func(t string, properties []byte, raw []byte) error
 	onFlush  func(events []Event)
@@ -32,7 +32,7 @@ type analytics struct {
 	mu       sync.Mutex
 }
 
-func (a *analytics) Flush() error {
+func (a *Analytics) Flush() error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -68,7 +68,7 @@ func (a *analytics) Flush() error {
 	return nil
 }
 
-func (a *analytics) Public(t string, properties any) error {
+func (a *Analytics) Public(t string, properties any) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -90,35 +90,35 @@ func (a *analytics) Public(t string, properties any) error {
 	return nil
 }
 
-func (a *analytics) SetOnFlush(fn func(events []Event)) *analytics {
+func (a *Analytics) SetOnFlush(fn func(events []Event)) *Analytics {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.onFlush = fn
 	return a
 }
 
-func (a *analytics) SetBackend(backend string) *analytics {
+func (a *Analytics) SetBackend(backend string) *Analytics {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.backend = backend
 	return a
 }
 
-func (a *analytics) WithDebounce(after time.Duration) *analytics {
+func (a *Analytics) WithDebounce(after time.Duration) *Analytics {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.debounce = utils.NewDebouncer(after)
 	return a
 }
 
-func (a *analytics) SetCallback(callback func(t string, properties []byte, raw []byte) error) *analytics {
+func (a *Analytics) SetCallback(callback func(t string, properties []byte, raw []byte) error) *Analytics {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.callback = callback
 	return a
 }
 
-func (a *analytics) Handle(data []byte) error {
+func (a *Analytics) Handle(data []byte) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -145,6 +145,6 @@ func (a *analytics) Handle(data []byte) error {
 	return err
 }
 
-func NewAnalytics() *analytics {
-	return &analytics{}
+func NewAnalytics() *Analytics {
+	return &Analytics{}
 }
