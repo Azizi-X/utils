@@ -23,37 +23,47 @@ type Event struct {
 	Properties any    `json:"properties"`
 }
 
+type Sending struct {
+	Token  string  `json:"token,omitempty"`
+	Events []Event `json:"events"`
+}
+
 type Analytics struct {
 	debounce func(f func())
 	callback func(t string, properties []byte, raw []byte) error
-	onFlush  func(events []Event)
+	onFlush  func(sending Sending) error
 	backend  string
-	pending  []Event
+	sending  Sending
 	mu       sync.Mutex
 }
 
 func (a *Analytics) Flush() error {
 	a.mu.Lock()
-	defer a.mu.Unlock()
 
-	pending := a.pending
-	a.pending = nil
+	defer func() {
+		a.sending.Events = nil
+		a.mu.Unlock()
+	}()
 
 	if a.backend == "" && a.onFlush == nil {
 		return errors.New("backend is not set")
-	} else if len(pending) == 0 {
+	} else if len(a.sending.Events) == 0 {
 		return nil
 	}
 
 	if a.onFlush != nil {
-		go a.onFlush(pending)
+		err := a.onFlush(a.sending)
+
+		if err != nil {
+			return err
+		}
 
 		if a.backend == "" {
 			return nil
 		}
 	}
 
-	payload, err := json.Marshal(pending)
+	payload, err := json.Marshal(a.sending)
 	if err != nil {
 		return err
 	}
@@ -78,7 +88,7 @@ func (a *Analytics) Public(t string, properties any) error {
 		return errors.New("debounce is not set")
 	}
 
-	a.pending = append(a.pending, Event{
+	a.sending.Events = append(a.sending.Events, Event{
 		Type:       t,
 		Properties: properties,
 	})
@@ -90,7 +100,7 @@ func (a *Analytics) Public(t string, properties any) error {
 	return nil
 }
 
-func (a *Analytics) SetOnFlush(fn func(events []Event)) *Analytics {
+func (a *Analytics) SetOnFlush(fn func(sending Sending) error) *Analytics {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.onFlush = fn
@@ -104,17 +114,17 @@ func (a *Analytics) SetBackend(backend string) *Analytics {
 	return a
 }
 
-func (a *Analytics) WithDebounce(after time.Duration) *Analytics {
+func (a *Analytics) SetToken(token string) *Analytics {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.debounce = utils.NewDebouncer(after)
+	a.sending.Token = token
 	return a
 }
 
-func (a *Analytics) SetCallback(callback func(t string, properties []byte, raw []byte) error) *Analytics {
+func (a *Analytics) SetDebounce(after time.Duration) *Analytics {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.callback = callback
+	a.debounce = utils.NewDebouncer(after)
 	return a
 }
 
