@@ -18,6 +18,12 @@ var defaultHTTP = http.Client{Timeout: timeout, Transport: &http.Transport{
 	ResponseHeaderTimeout: timeout,
 }}
 
+type Handle struct {
+	Type       string `json:"type"`
+	Properties any    `json:"properties"`
+	Raw        []byte `json:"raw"`
+}
+
 type Event struct {
 	Type       string `json:"type"`
 	Properties any    `json:"properties"`
@@ -30,7 +36,7 @@ type Sending struct {
 
 type Analytics struct {
 	debounce func(f func())
-	callback func(t string, properties []byte, raw []byte) error
+	callback func(handle Handle) error
 	onFlush  func(sending Sending) error
 	backend  string
 	sending  Sending
@@ -128,7 +134,7 @@ func (a *Analytics) SetDebounce(after time.Duration) *Analytics {
 	return a
 }
 
-func (a *Analytics) SetCallback(callback func(t string, properties []byte, raw []byte) error) *Analytics {
+func (a *Analytics) SetCallback(callback func(handle Handle) error) *Analytics {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.callback = callback
@@ -153,7 +159,11 @@ func (a *Analytics) Handle(data []byte) error {
 		t, _ := jsonparser.GetString(value, "type")
 		properties, _, _, _ := jsonparser.Get(value, "properties")
 
-		go a.callback(t, properties, value)
+		go a.callback(Handle{
+			Type:       t,
+			Properties: properties,
+			Raw:        value,
+		})
 
 	}, "events"); err != nil {
 		return err
