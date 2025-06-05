@@ -2,6 +2,8 @@ package debug
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -43,6 +45,20 @@ type StackFrame struct {
 	Line     int
 }
 
+func stripPath(frameFile string) string {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return frameFile
+	}
+
+	rel, err := filepath.Rel(cwd, frameFile)
+	if err != nil {
+		return frameFile
+	}
+
+	return rel
+}
+
 func (d *Debugger) frames(skip int) (stack []StackFrame) {
 	if d == nil {
 		return nil
@@ -55,9 +71,12 @@ func (d *Debugger) frames(skip int) (stack []StackFrame) {
 	for {
 		frame, more := frames.Next()
 		if !strings.HasPrefix(frame.Function, "runtime.") {
+
+			file := stripPath(frame.File)
+
 			stack = append(stack, StackFrame{
 				Function: frame.Function,
-				File:     frame.File,
+				File:     file,
 				Line:     frame.Line,
 			})
 		}
