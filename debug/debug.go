@@ -20,6 +20,7 @@ type Debugger struct {
 	mu       sync.Mutex
 	callback []func(err error, stack Stack) error
 	maxDepth int
+	strip    bool
 	Calls    int
 }
 
@@ -37,6 +38,7 @@ type Stack struct {
 	Time     int64
 	Frames   []StackFrame
 	MemStats MemStats
+	Total    int
 }
 
 type StackFrame struct {
@@ -71,8 +73,13 @@ func (d *Debugger) frames(skip int) (stack []StackFrame) {
 	for {
 		frame, more := frames.Next()
 		if !strings.HasPrefix(frame.Function, "runtime.") {
+			var file string
 
-			file := stripPath(frame.File)
+			if d.strip {
+				file = stripPath(frame.File)
+			} else {
+				file = frame.File
+			}
 
 			stack = append(stack, StackFrame{
 				Function: frame.Function,
@@ -120,6 +127,7 @@ func (d *Debugger) MakeStack(err error, skip int) Stack {
 		Time:     time.Now().UnixMilli(),
 		Frames:   frames,
 		MemStats: memStats,
+		Total:    d.Calls,
 	}
 }
 
@@ -153,6 +161,13 @@ func (d *Debugger) Publish(msg any, formats ...any) error {
 		go callback(err, stack)
 	}
 	return err
+}
+
+func (d *Debugger) SetStrip(strip bool) *Debugger {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.strip = strip
+	return d
 }
 
 func (d *Debugger) SetMaxDepth(depth int) *Debugger {
