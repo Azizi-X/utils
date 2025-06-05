@@ -18,7 +18,7 @@ var defaultHTTP = http.Client{Timeout: timeout, Transport: &http.Transport{
 	ResponseHeaderTimeout: timeout,
 }}
 
-type Event struct {
+type event struct {
 	Type       string `json:"type"`
 	Properties any    `json:"properties"`
 }
@@ -26,10 +26,9 @@ type Event struct {
 type analytics struct {
 	debounce func(f func())
 	callback func(t string, properties []byte, raw []byte) error
-	onFlush  func(events []Event, extra ...any)
-	extra    []any
+	onFlush  func(events []event)
 	backend  string
-	pending  []Event
+	pending  []event
 	mu       sync.Mutex
 }
 
@@ -47,7 +46,7 @@ func (a *analytics) Flush() error {
 	}
 
 	if a.onFlush != nil {
-		go a.onFlush(pending, a.extra...)
+		go a.onFlush(pending)
 
 		if a.backend == "" {
 			return nil
@@ -79,7 +78,7 @@ func (a *analytics) Public(t string, properties any) error {
 		return errors.New("debounce is not set")
 	}
 
-	a.pending = append(a.pending, Event{
+	a.pending = append(a.pending, event{
 		Type:       t,
 		Properties: properties,
 	})
@@ -91,11 +90,10 @@ func (a *analytics) Public(t string, properties any) error {
 	return nil
 }
 
-func (a *analytics) SetOnFlush(fn func(events []Event, extra ...any), extra ...any) *analytics {
+func (a *analytics) SetOnFlush(fn func(events []event)) *analytics {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.onFlush = fn
-	a.extra = extra
 	return a
 }
 
