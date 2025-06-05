@@ -26,7 +26,8 @@ type event struct {
 type analytics struct {
 	debounce func(f func())
 	callback func(t string, properties []byte, raw []byte) error
-	onFlush  func(events []event)
+	onFlush  func(events []event, extra ...any)
+	extra    []any
 	backend  string
 	pending  []event
 	mu       sync.Mutex
@@ -46,7 +47,7 @@ func (a *analytics) Flush() error {
 	}
 
 	if a.onFlush != nil {
-		go a.onFlush(pending)
+		go a.onFlush(pending, a.extra...)
 
 		if a.backend == "" {
 			return nil
@@ -90,10 +91,11 @@ func (a *analytics) Public(t string, properties any) error {
 	return nil
 }
 
-func (a *analytics) SetOnFlush(fn func(events []event)) *analytics {
+func (a *analytics) SetOnFlush(fn func(events []event, extra ...any), extra ...any) *analytics {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.onFlush = fn
+	a.extra = extra
 	return a
 }
 
