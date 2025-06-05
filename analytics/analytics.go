@@ -78,7 +78,7 @@ func (a *Analytics) Flush() error {
 	return nil
 }
 
-func (a *Analytics) Public(t string, properties any) error {
+func (a *Analytics) Publish(t string, properties any) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
