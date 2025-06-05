@@ -1,29 +1,127 @@
 package analytics
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"sync"
 	"time"
 
 	"github.com/Azizi-X/utils"
 	"github.com/buger/jsonparser"
 )
 
+const timeout = 10 * time.Second
+
+var defaultHTTP = http.Client{Timeout: timeout, Transport: &http.Transport{
+	ResponseHeaderTimeout: timeout,
+}}
+
+type event struct {
+	Type       string `json:"type"`
+	Properties any    `json:"properties"`
+}
+
 type analytics struct {
 	debounce func(f func())
 	callback func(t string, properties []byte, raw []byte) error
+	onFlush  func(events []event)
+	backend  string
+	pending  []event
+	mu       sync.Mutex
+}
+
+func (a *analytics) Flush() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	pending := a.pending
+	a.pending = nil
+
+	if a.backend == "" && a.onFlush == nil {
+		return errors.New("backend is not set")
+	} else if len(pending) == 0 {
+		return nil
+	}
+
+	if a.onFlush != nil {
+		go a.onFlush(pending)
+
+		if a.backend == "" {
+			return nil
+		}
+	}
+
+	payload, err := json.Marshal(pending)
+	if err != nil {
+		return err
+	}
+
+	resp, err := defaultHTTP.Post(a.backend, "application/json", bytes.NewBuffer(payload))
+	if err != nil {
+		return err
+	}
+
+	defer resp.Body.Close()
+
+	return nil
+}
+
+func (a *analytics) Public(t string, properties any) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if a.backend == "" && a.onFlush == nil {
+		return errors.New("backend is not set")
+	} else if a.debounce == nil {
+		return errors.New("debounce is not set")
+	}
+
+	a.pending = append(a.pending, event{
+		Type:       t,
+		Properties: properties,
+	})
+
+	a.debounce(func() {
+		a.Flush()
+	})
+
+	return nil
+}
+
+func (a *analytics) SetOnFlush(fn func(events []event)) *analytics {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.onFlush = fn
+	return a
+}
+
+func (a *analytics) SetBackend(backend string) *analytics {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.backend = backend
+	return a
 }
 
 func (a *analytics) WithDebounce(after time.Duration) *analytics {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	a.debounce = utils.NewDebouncer(after)
 	return a
 }
 
 func (a *analytics) SetCallback(callback func(t string, properties []byte, raw []byte) error) *analytics {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	a.callback = callback
 	return a
 }
 
 func (a *analytics) Handle(data []byte) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
 	if a.callback == nil {
 		return errors.New("callback is not set")
 	}
