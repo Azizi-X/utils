@@ -31,7 +31,7 @@ type MemStats struct {
 }
 
 type Stack struct {
-	Error    error
+	Error    string
 	Time     int64
 	Frames   []StackFrame
 	MemStats MemStats
@@ -91,8 +91,13 @@ func (d *Debugger) MakeStack(err error, skip int) Stack {
 	frames := d.frames(skip)
 	memStats := d.memStats()
 
+	errStr := ""
+	if err != nil {
+		errStr = err.Error()
+	}
+
 	return Stack{
-		Error:    err,
+		Error:    errStr,
 		Time:     time.Now().UnixMilli(),
 		Frames:   frames,
 		MemStats: memStats,
