@@ -16,7 +16,7 @@ const (
 
 type Debugger struct {
 	mu       sync.Mutex
-	callback []func(err error, stack Stack)
+	callback []func(err error, stack Stack) error
 	maxDepth int
 	Calls    int
 }
@@ -138,7 +138,7 @@ func (d *Debugger) SetMaxDepth(depth int) *Debugger {
 	return d
 }
 
-func (d *Debugger) AddCallback(callback func(err error, stack Stack)) *Debugger {
+func (d *Debugger) AddCallback(callback func(err error, stack Stack) error) *Debugger {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.callback = append(d.callback, callback)
