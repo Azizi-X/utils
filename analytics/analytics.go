@@ -20,8 +20,12 @@ var defaultHTTP = http.Client{Timeout: timeout, Transport: &http.Transport{
 
 type Handle struct {
 	Type       string `json:"type"`
-	Properties any    `json:"properties"`
+	Properties []byte `json:"properties"`
 	Raw        []byte `json:"raw"`
+}
+
+func (handle *Handle) Unmarshal() {
+	json.Unmarshal(handle.Raw, handle)
 }
 
 type Event struct {
