@@ -18,16 +18,6 @@ var defaultHTTP = http.Client{Timeout: timeout, Transport: &http.Transport{
 	ResponseHeaderTimeout: timeout,
 }}
 
-type Handle struct {
-	Type       string `json:"type"`
-	Properties []byte `json:"properties"`
-	Raw        []byte `json:"raw"`
-}
-
-func (handle *Handle) Unmarshal() {
-	json.Unmarshal(handle.Raw, handle)
-}
-
 type Event struct {
 	Type       string `json:"type"`
 	Properties any    `json:"properties"`
@@ -45,6 +35,16 @@ type Analytics struct {
 	backend  string
 	sending  Sending
 	mu       sync.Mutex
+}
+
+type Handle struct {
+	Type       string `json:"type"`
+	Properties []byte `json:"properties"`
+	Raw        []byte `json:"raw"`
+}
+
+func (handle *Handle) Unmarshal(v any) error {
+	return json.Unmarshal(handle.Properties, v)
 }
 
 func (a *Analytics) Flush() error {
