@@ -128,6 +128,13 @@ func (a *Analytics) SetDebounce(after time.Duration) *Analytics {
 	return a
 }
 
+func (a *Analytics) SetCallback(callback func(t string, properties []byte, raw []byte) error) *Analytics {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.callback = callback
+	return a
+}
+
 func (a *Analytics) Handle(data []byte) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
