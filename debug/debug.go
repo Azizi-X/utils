@@ -79,7 +79,7 @@ func stripPath(frameFile string) string {
 		return frameFile
 	}
 
-	return rel
+	return filepath.ToSlash(rel)
 }
 
 func (d *Debugger) frames(skip int) (stack []StackFrame) {
