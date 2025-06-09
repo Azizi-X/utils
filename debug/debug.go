@@ -1,6 +1,8 @@
 package debug
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -45,6 +47,25 @@ type StackFrame struct {
 	Function string
 	File     string
 	Line     int
+}
+
+func (s *Stack) Hash(extra ...string) string {
+	var builder strings.Builder
+
+	builder.WriteString(s.Error)
+
+	for i := range extra {
+		builder.WriteString(extra[i])
+	}
+
+	for _, frame := range s.Frames {
+		builder.WriteString(frame.Function)
+		builder.WriteString(frame.File)
+		builder.WriteString(string(rune(frame.Line)))
+	}
+
+	sum := sha256.Sum256([]byte(builder.String()))
+	return hex.EncodeToString(sum[:])
 }
 
 func stripPath(frameFile string) string {
