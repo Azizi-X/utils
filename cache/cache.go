@@ -10,6 +10,12 @@ import (
 
 const (
 	ResetTimer cacheOption = 0
+
+	CacheDuration      = 15 * time.Minute
+	HourDuration       = 1 * time.Hour
+	FullDayDuration    = 24 * time.Hour
+	HalfDayDuration    = 12 * time.Hour
+	ShortCacheDuration = 5 * time.Minute
 )
 
 var (
