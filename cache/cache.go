@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	CacheResetTimer cacheOption = 0
+	ResetTimer cacheOption = 0
 )
 
 var (
@@ -55,7 +55,7 @@ func (c *cache) Exists(key string, options ...cacheOption) bool {
 		return false
 	}
 
-	if slices.Contains(options, CacheResetTimer) {
+	if slices.Contains(options, ResetTimer) {
 		item.Expires = time.Now().Add(item.Duration)
 	}
 
@@ -96,7 +96,7 @@ func (c *cache) Get(key string, v any, options ...cacheOption) (bool, error) {
 		return true, err
 	}
 
-	if slices.Contains(options, CacheResetTimer) {
+	if slices.Contains(options, ResetTimer) {
 		item.Expires = time.Now().Add(item.Duration)
 	}
 
