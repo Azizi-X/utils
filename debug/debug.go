@@ -119,13 +119,17 @@ func (d *Debugger) memStats() MemStats {
 		return MemStats{}
 	}
 
+	var total uint64
 	var stats runtime.MemStats
+
 	runtime.ReadMemStats(&stats)
 
-	memory, _ := mem.VirtualMemory()
+	if memory, _ := mem.VirtualMemory(); memory != nil {
+		total = memory.Total
+	}
 
 	return MemStats{
-		Total:       memory.Total,
+		Total:       total,
 		Alloc:       stats.Alloc,
 		TotalAlloc:  stats.TotalAlloc,
 		Mallocs:     stats.Mallocs,
