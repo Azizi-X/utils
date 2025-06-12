@@ -27,16 +27,16 @@ func (rd *EvictingSet[T]) Add(id T) {
 	rd.mu.Unlock()
 }
 
-func (rd *EvictingSet[T]) Remove(id T) {
+func (rd *EvictingSet[T]) Remove(item T) {
 	rd.mu.Lock()
-	delete(rd.values, id)
+	delete(rd.values, item)
 	rd.mu.Unlock()
 }
 
-func (rd *EvictingSet[T]) Exists(ids ...T) bool {
+func (rd *EvictingSet[T]) Exists(items ...T) bool {
 	rd.mu.RLock()
-	exists := slices.ContainsFunc(ids, func(id T) bool {
-		_, ok := rd.values[id]
+	exists := slices.ContainsFunc(items, func(item T) bool {
+		_, ok := rd.values[item]
 		return ok
 	})
 	rd.mu.RUnlock()
