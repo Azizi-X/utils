@@ -19,7 +19,7 @@ const (
 )
 
 var (
-	AllCaches []*cache
+	AllCaches []*Cache
 
 	SleepTimer = 2 * time.Second
 	MaxEntries = 2000
@@ -34,20 +34,20 @@ type cacheItem struct {
 	Duration time.Duration
 }
 
-type cache struct {
+type Cache struct {
 	Items map[string]cacheItem
 	mu    sync.Mutex
 }
 
-func NewCache() *cache {
-	cache := &cache{Items: map[string]cacheItem{}}
+func NewCache() *Cache {
+	cache := &Cache{Items: map[string]cacheItem{}}
 
 	AllCaches = append(AllCaches, cache)
 
 	return cache
 }
 
-func (c *cache) Exists(key string, options ...cacheOption) bool {
+func (c *Cache) Exists(key string, options ...cacheOption) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -68,7 +68,7 @@ func (c *cache) Exists(key string, options ...cacheOption) bool {
 	return true
 }
 
-func (c *cache) GetItems() [][]byte {
+func (c *Cache) GetItems() [][]byte {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -80,7 +80,7 @@ func (c *cache) GetItems() [][]byte {
 	return items
 }
 
-func (c *cache) Get(key string, v any, options ...cacheOption) (bool, error) {
+func (c *Cache) Get(key string, v any, options ...cacheOption) (bool, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -111,7 +111,7 @@ func (c *cache) Get(key string, v any, options ...cacheOption) (bool, error) {
 	return true, nil
 }
 
-func (c *cache) Set(key string, data any, err error, expires time.Duration) error {
+func (c *Cache) Set(key string, data any, err error, expires time.Duration) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -125,7 +125,7 @@ func (c *cache) Set(key string, data any, err error, expires time.Duration) erro
 	return err
 }
 
-func (c *cache) check() {
+func (c *Cache) check() {
 	c.mu.Lock()
 	for key, item := range c.Items {
 		if item.Duration != -1 && item.Expires.Before(time.Now()) {
