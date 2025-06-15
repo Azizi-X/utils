@@ -5,6 +5,8 @@ import (
 	"sync"
 )
 
+var Events = New()
+
 type subscriber struct {
 	handler reflect.Value
 }
