@@ -11,6 +11,7 @@ type EvictingSet[T comparable] struct {
 	max         int
 	mu          sync.RWMutex `json:"-"`
 	Broadcaster *Broadcaster[T]
+	allowFunc   func(T T) bool
 }
 
 func (rd *EvictingSet[T]) Add(id T) {
@@ -19,6 +20,12 @@ func (rd *EvictingSet[T]) Add(id T) {
 	rd.mu.Lock()
 
 	if _, exists := rd.values[id]; !exists {
+
+		if rd.allowFunc != nil && !rd.allowFunc(id) {
+			rd.mu.Unlock()
+			return
+		}
+
 		rd.values[id] = struct{}{}
 		rd.order = append(rd.order, id)
 	}
@@ -52,6 +59,11 @@ func (rd *EvictingSet[T]) Exists(items ...T) bool {
 	})
 	rd.mu.RUnlock()
 	return exists
+}
+
+func (rd *EvictingSet[T]) AllowFunc(fn func(T T) bool) *EvictingSet[T] {
+	rd.allowFunc = fn
+	return rd
 }
 
 func (rd *EvictingSet[T]) Len() int {

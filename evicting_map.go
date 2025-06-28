@@ -11,6 +11,7 @@ type EvictingMap[K comparable, V any] struct {
 	max         int
 	mu          sync.RWMutex `json:"-"`
 	Broadcaster *Broadcaster[K]
+	allowFunc   func(K K, V V) bool
 }
 
 func (rd *EvictingMap[K, V]) Add(id K, value V) {
@@ -18,6 +19,12 @@ func (rd *EvictingMap[K, V]) Add(id K, value V) {
 
 	rd.mu.Lock()
 	if _, exists := rd.values[id]; !exists {
+
+		if rd.allowFunc != nil && !rd.allowFunc(id, value) {
+			rd.mu.Unlock()
+			return
+		}
+
 		rd.values[id] = value
 		rd.order = append(rd.order, id)
 	}
@@ -73,6 +80,11 @@ func (rd *EvictingMap[K, V]) Last() (V, bool) {
 	value, exists := rd.values[last]
 
 	return value, exists
+}
+
+func (rd *EvictingMap[K, V]) AllowFunc(fn func(K K, V V) bool) *EvictingMap[K, V] {
+	rd.allowFunc = fn
+	return rd
 }
 
 func (rd *EvictingMap[K, V]) Len() int {
