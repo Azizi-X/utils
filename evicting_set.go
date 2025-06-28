@@ -23,10 +23,11 @@ func (rd *EvictingSet[T]) Add(id T) {
 		rd.order = append(rd.order, id)
 	}
 
-	for len(rd.values) > rd.max && len(rd.order) > 0 {
-		oldest := rd.order[0]
-		rd.order = rd.order[1:]
-		delete(rd.values, oldest)
+	for len(rd.values) > rd.max {
+		for key := range rd.values {
+			delete(rd.values, key)
+			break
+		}
 	}
 
 	rd.mu.Unlock()
@@ -51,6 +52,13 @@ func (rd *EvictingSet[T]) Exists(items ...T) bool {
 	})
 	rd.mu.RUnlock()
 	return exists
+}
+
+func (rd *EvictingSet[T]) Len() int {
+	rd.mu.RLock()
+	length := len(rd.values)
+	rd.mu.RUnlock()
+	return length
 }
 
 func NewEvictingSet[T comparable](max int) *EvictingSet[T] {

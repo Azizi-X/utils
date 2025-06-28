@@ -7,6 +7,7 @@ import (
 
 type EvictingMap[K comparable, V any] struct {
 	values      map[K]V
+	order       []K
 	max         int
 	mu          sync.RWMutex `json:"-"`
 	Broadcaster *Broadcaster[K]
@@ -16,7 +17,10 @@ func (rd *EvictingMap[K, V]) Add(id K, value V) {
 	rd.Broadcaster.Broadcast(id)
 
 	rd.mu.Lock()
-	rd.values[id] = value
+	if _, exists := rd.values[id]; !exists {
+		rd.values[id] = value
+		rd.order = append(rd.order, id)
+	}
 
 	for len(rd.values) > rd.max {
 		for key := range rd.values {
@@ -24,12 +28,18 @@ func (rd *EvictingMap[K, V]) Add(id K, value V) {
 			break
 		}
 	}
+
 	rd.mu.Unlock()
 }
 
 func (rd *EvictingMap[K, V]) Remove(item K) {
 	rd.mu.Lock()
 	delete(rd.values, item)
+
+	rd.order = slices.DeleteFunc(rd.order, func(k K) bool {
+		return k == item
+	})
+
 	rd.mu.Unlock()
 }
 
@@ -48,6 +58,28 @@ func (rd *EvictingMap[K, V]) Has(items ...K) bool {
 	})
 	rd.mu.RUnlock()
 	return exists
+}
+
+func (rd *EvictingMap[K, V]) Last() (V, bool) {
+	rd.mu.RLock()
+	defer rd.mu.RUnlock()
+
+	if len(rd.order) == 0 {
+		var empty V
+		return empty, false
+	}
+
+	last := rd.order[len(rd.order)-1]
+	value, exists := rd.values[last]
+
+	return value, exists
+}
+
+func (rd *EvictingMap[K, V]) Len() int {
+	rd.mu.RLock()
+	length := len(rd.values)
+	rd.mu.RUnlock()
+	return length
 }
 
 func NewEvictingMap[K comparable, V any](max int) *EvictingMap[K, V] {
