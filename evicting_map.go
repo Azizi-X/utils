@@ -33,7 +33,14 @@ func (rd *EvictingMap[K, V]) Remove(item K) {
 	rd.mu.Unlock()
 }
 
-func (rd *EvictingMap[K, V]) Exists(items ...K) bool {
+func (rd *EvictingMap[K, V]) Get(item K) (V, bool) {
+	rd.mu.RLock()
+	value, exists := rd.values[item]
+	rd.mu.RUnlock()
+	return value, exists
+}
+
+func (rd *EvictingMap[K, V]) Has(items ...K) bool {
 	rd.mu.RLock()
 	exists := slices.ContainsFunc(items, func(item K) bool {
 		_, ok := rd.values[item]
