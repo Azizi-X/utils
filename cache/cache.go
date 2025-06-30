@@ -13,11 +13,12 @@ const (
 	ResetTimer cacheOption   = 0
 	NoExpire   time.Duration = -1
 
-	DefaultDuration = 15 * time.Minute
-	HourDuration    = 1 * time.Hour
-	FullDayDuration = 24 * time.Hour
-	HalfDayDuration = 12 * time.Hour
-	ShortDuration   = 5 * time.Minute
+	DefaultDuration   = 15 * time.Minute
+	HourDuration      = 1 * time.Hour
+	FullDayDuration   = 24 * time.Hour
+	HalfDayDuration   = 12 * time.Hour
+	ShortDuration     = 5 * time.Minute
+	TenMinuteDuration = 10 * time.Minute
 )
 
 var (
