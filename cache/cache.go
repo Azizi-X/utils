@@ -105,7 +105,7 @@ func (c *Cache) GetAny(key string, options ...cacheOption) (any, bool) {
 		c.Items[key] = item
 	}
 
-	return item, true
+	return item.Any, true
 }
 
 func (c *Cache) Get(key string, v any, options ...cacheOption) (bool, error) {
