@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -20,8 +21,6 @@ const (
 )
 
 var (
-	AllCaches []*Cache
-
 	SleepTimer = 2 * time.Second
 	MaxEntries = 2000
 )
@@ -38,12 +37,13 @@ type cacheItem struct {
 type Cache struct {
 	Items map[string]cacheItem
 	mu    sync.Mutex
+	Ctx   context.Context
 }
 
-func NewCache() *Cache {
-	cache := &Cache{Items: map[string]cacheItem{}}
+func NewCache(ctx context.Context) *Cache {
+	cache := &Cache{Items: map[string]cacheItem{}, Ctx: ctx}
 
-	AllCaches = append(AllCaches, cache)
+	go cache.loop()
 
 	return cache
 }
@@ -147,7 +147,7 @@ func (c *Cache) Remove(key string) bool {
 	return exists
 }
 
-func (c *Cache) check() {
+func (c *Cache) Check() {
 	c.mu.Lock()
 	for key, item := range c.Items {
 		if item.Duration != NoExpire && item.Expires.Before(time.Now()) {
@@ -163,13 +163,9 @@ func (c *Cache) check() {
 	c.mu.Unlock()
 }
 
-func init() {
-	go func() {
-		for {
-			time.Sleep(SleepTimer)
-			for i := range AllCaches {
-				AllCaches[i].check()
-			}
-		}
-	}()
+func (c *Cache) loop() {
+	for c.Ctx.Err() == nil {
+		time.Sleep(SleepTimer)
+		c.Check()
+	}
 }
