@@ -32,6 +32,7 @@ type cacheItem struct {
 	Err      error
 	Expires  time.Time
 	Duration time.Duration
+	Any      any
 }
 
 type Cache struct {
@@ -81,6 +82,32 @@ func (c *Cache) GetItems() [][]byte {
 	return items
 }
 
+func (c *Cache) GetAny(key string, options ...cacheOption) (any, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	item, ok := c.Items[key]
+	if !ok {
+		return nil, false
+	}
+
+	if item.Duration != NoExpire && item.Expires.Before(time.Now()) {
+		delete(c.Items, key)
+		return nil, false
+	}
+
+	if item.Err != nil {
+		return nil, false
+	}
+
+	if slices.Contains(options, ResetTimer) {
+		item.Expires = time.Now().Add(item.Duration)
+		c.Items[key] = item
+	}
+
+	return item, true
+}
+
 func (c *Cache) Get(key string, v any, options ...cacheOption) (bool, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -105,9 +132,8 @@ func (c *Cache) Get(key string, v any, options ...cacheOption) (bool, error) {
 
 	if slices.Contains(options, ResetTimer) {
 		item.Expires = time.Now().Add(item.Duration)
+		c.Items[key] = item
 	}
-
-	c.Items[key] = item
 
 	return true, nil
 }
@@ -131,6 +157,24 @@ func (c *Cache) SetErr(key string, data any, err error, expires ...time.Duration
 	}
 
 	c.Items[key] = cacheItem{Bytes: bytes, Expires: time.Now().Add(expiry), Err: err, Duration: expiry}
+
+	return err
+}
+
+func (c *Cache) SetAny(key string, data any, expires ...time.Duration) error {
+	return c.SetAnyErr(key, data, nil, expires...)
+}
+
+func (c *Cache) SetAnyErr(key string, data any, err error, expires ...time.Duration) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	expiry := NoExpire
+	if len(expires) > 0 {
+		expiry = expires[0]
+	}
+
+	c.Items[key] = cacheItem{Expires: time.Now().Add(expiry), Err: err, Duration: expiry, Any: data}
 
 	return err
 }
