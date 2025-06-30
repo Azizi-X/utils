@@ -9,7 +9,8 @@ import (
 )
 
 const (
-	ResetTimer cacheOption = 0
+	ResetTimer cacheOption   = 0
+	NoExpire   time.Duration = -1
 
 	DefaultDuration = 15 * time.Minute
 	HourDuration    = 1 * time.Hour
@@ -56,7 +57,7 @@ func (c *Cache) Exists(key string, options ...cacheOption) bool {
 		return false
 	}
 
-	if item.Expires.Before(time.Now()) {
+	if item.Duration != NoExpire && item.Expires.Before(time.Now()) {
 		delete(c.Items, key)
 		return false
 	}
@@ -89,7 +90,7 @@ func (c *Cache) Get(key string, v any, options ...cacheOption) (bool, error) {
 		return false, fmt.Errorf("cache not found")
 	}
 
-	if item.Duration != -1 && item.Expires.Before(time.Now()) {
+	if item.Duration != NoExpire && item.Expires.Before(time.Now()) {
 		delete(c.Items, key)
 		return false, fmt.Errorf("cache expired")
 	}
@@ -111,24 +112,45 @@ func (c *Cache) Get(key string, v any, options ...cacheOption) (bool, error) {
 	return true, nil
 }
 
-func (c *Cache) Set(key string, data any, err error, expires time.Duration) error {
+func (c *Cache) Set(key string, data any, expires ...time.Duration) error {
+	return c.SetErr(key, data, nil, expires...)
+}
+
+func (c *Cache) SetErr(key string, data any, err error, expires ...time.Duration) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	bytes, err_ := json.Marshal(data)
-	if err_ != nil {
-		return err_
+	bytes, jsonErr := json.Marshal(data)
+	if jsonErr != nil {
+		return jsonErr
 	}
 
-	c.Items[key] = cacheItem{Bytes: bytes, Expires: time.Now().Add(expires), Err: err, Duration: expires}
+	expiry := NoExpire
+	if len(expires) > 0 {
+		expiry = expires[0]
+	}
+
+	c.Items[key] = cacheItem{Bytes: bytes, Expires: time.Now().Add(expiry), Err: err, Duration: expiry}
 
 	return err
+}
+
+func (c *Cache) Remove(key string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	_, exists := c.Items[key]
+	if exists {
+		delete(c.Items, key)
+	}
+
+	return exists
 }
 
 func (c *Cache) check() {
 	c.mu.Lock()
 	for key, item := range c.Items {
-		if item.Duration != -1 && item.Expires.Before(time.Now()) {
+		if item.Duration != NoExpire && item.Expires.Before(time.Now()) {
 			delete(c.Items, key)
 		}
 	}
