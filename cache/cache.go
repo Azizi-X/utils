@@ -107,7 +107,7 @@ func (c *Cache) GetAnyErr(key string, options ...cacheOption) (any, bool, error)
 	}
 
 	if item.Err != nil {
-		return nil, false, item.Err
+		return nil, true, item.Err
 	}
 
 	if slices.Contains(options, ResetTimer) {
