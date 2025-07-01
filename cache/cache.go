@@ -84,21 +84,30 @@ func (c *Cache) GetItems() [][]byte {
 }
 
 func (c *Cache) GetAny(key string, options ...cacheOption) (any, bool) {
+	v, ok, err := c.GetAnyErr(key, options...)
+	if err != nil {
+		return nil, false
+	}
+
+	return v, ok
+}
+
+func (c *Cache) GetAnyErr(key string, options ...cacheOption) (any, bool, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	item, ok := c.Items[key]
 	if !ok {
-		return nil, false
+		return nil, false, nil
 	}
 
 	if item.Duration != NoExpire && item.Expires.Before(time.Now()) {
 		delete(c.Items, key)
-		return nil, false
+		return nil, false, nil
 	}
 
 	if item.Err != nil {
-		return nil, false
+		return nil, false, item.Err
 	}
 
 	if slices.Contains(options, ResetTimer) {
@@ -106,7 +115,7 @@ func (c *Cache) GetAny(key string, options ...cacheOption) (any, bool) {
 		c.Items[key] = item
 	}
 
-	return item.Any, true
+	return item.Any, true, nil
 }
 
 func (c *Cache) Get(key string, v any, options ...cacheOption) (bool, error) {
