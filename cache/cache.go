@@ -71,6 +71,20 @@ func (c *Cache) Exists(key string, options ...cacheOption) bool {
 	return true
 }
 
+func (c *Cache) ExistsSet(key string, data any, expires time.Duration, options ...cacheOption) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	_, err := c.getItemUnsafe(key, options...)
+	if err == nil {
+		return true
+	}
+
+	c.setUnsafe(key, data, nil, expires)
+
+	return false
+}
+
 func (c *Cache) GetItems() [][]byte {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -118,26 +132,19 @@ func (c *Cache) GetAnyErr(key string, options ...cacheOption) (any, bool, error)
 	return item.Any, true, nil
 }
 
-func (c *Cache) Get(key string, v any, options ...cacheOption) (bool, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
+func (c *Cache) getItemUnsafe(key string, options ...cacheOption) (*cacheItem, error) {
 	item, ok := c.Items[key]
 	if !ok {
-		return false, fmt.Errorf("cache not found")
+		return nil, fmt.Errorf("cache not found")
 	}
 
 	if item.Duration != NoExpire && item.Expires.Before(time.Now()) {
 		delete(c.Items, key)
-		return false, fmt.Errorf("cache expired")
+		return nil, fmt.Errorf("cache expired")
 	}
 
 	if item.Err != nil {
-		return true, item.Err
-	}
-
-	if err := json.Unmarshal(item.Bytes, v); err != nil {
-		return true, err
+		return nil, item.Err
 	}
 
 	if slices.Contains(options, ResetTimer) {
@@ -145,7 +152,19 @@ func (c *Cache) Get(key string, v any, options ...cacheOption) (bool, error) {
 		c.Items[key] = item
 	}
 
-	return true, nil
+	return &item, nil
+}
+
+func (c *Cache) Get(key string, v any, options ...cacheOption) (bool, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	item, err := c.getItemUnsafe(key, options...)
+	if err != nil {
+		return false, err
+	}
+
+	return true, json.Unmarshal(item.Bytes, v)
 }
 
 func (c *Cache) Set(key string, data any, expires ...time.Duration) error {
@@ -156,6 +175,10 @@ func (c *Cache) SetErr(key string, data any, err error, expires ...time.Duration
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	return c.setUnsafe(key, data, err, expires...)
+}
+
+func (c *Cache) setUnsafe(key string, data any, err error, expires ...time.Duration) error {
 	bytes, jsonErr := json.Marshal(data)
 	if jsonErr != nil {
 		return jsonErr
