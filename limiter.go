@@ -45,7 +45,7 @@ func (l *Limiter) loop() {
 	}
 }
 
-func (l *Limiter) LimitBy(key string) {
+func (l *Limiter) LimitKey(key string) {
 	l.mu.Lock()
 	value, ok := l.values[key]
 
