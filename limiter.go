@@ -60,9 +60,7 @@ func (l *Limiter) LimitKey(key string) {
 
 	l.mu.Unlock()
 
-	defer func() {
-		value.ref.Add(-1)
-	}()
+	defer value.ref.Add(-1)
 
 	if !ok {
 		return
