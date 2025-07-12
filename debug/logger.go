@@ -28,9 +28,9 @@ func (l *Logger) SetMaxDepth(depth int) *Logger {
 	return l
 }
 
-func (l *Logger) Verbose(msg string, formats ...any) {
+func (l *Logger) Verbose(msg string, formats ...any) error {
 	if l == nil {
-		return
+		return nil
 	}
 
 	msg = fmt.Sprintf(msg, formats...)
@@ -49,6 +49,8 @@ func (l *Logger) Verbose(msg string, formats ...any) {
 	for _, callback := range l.callback {
 		go callback(msg, stack)
 	}
+
+	return errors.New(msg)
 }
 
 func (l *Logger) AddCallback(callback func(message string, stack Stack)) *Logger {
