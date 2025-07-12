@@ -49,6 +49,12 @@ type StackFrame struct {
 	Line     int
 }
 
+type stackOptions struct {
+	strip    bool
+	maxDepth int
+	calls    int
+}
+
 func (s *Stack) Hash(extra ...string) string {
 	var builder strings.Builder
 
@@ -82,12 +88,8 @@ func stripPath(frameFile string) string {
 	return filepath.ToSlash(rel)
 }
 
-func (d *Debugger) frames(skip int) (stack []StackFrame) {
-	if d == nil {
-		return nil
-	}
-
-	pc := make([]uintptr, d.maxDepth)
+func frames(skip int, options stackOptions) (stack []StackFrame) {
+	pc := make([]uintptr, options.maxDepth)
 	n := runtime.Callers(skip, pc)
 	frames := runtime.CallersFrames(pc[:n])
 
@@ -96,7 +98,7 @@ func (d *Debugger) frames(skip int) (stack []StackFrame) {
 		if !strings.HasPrefix(frame.Function, "runtime.") {
 			var file string
 
-			if d.strip {
+			if options.strip {
 				file = stripPath(frame.File)
 			} else {
 				file = frame.File
@@ -114,11 +116,7 @@ func (d *Debugger) frames(skip int) (stack []StackFrame) {
 	}
 }
 
-func (d *Debugger) memStats() MemStats {
-	if d == nil {
-		return MemStats{}
-	}
-
+func memStats() MemStats {
 	var total uint64
 	var stats runtime.MemStats
 
@@ -138,9 +136,9 @@ func (d *Debugger) memStats() MemStats {
 	}
 }
 
-func (d *Debugger) MakeStack(err error, skip int) Stack {
-	frames := d.frames(skip)
-	memStats := d.memStats()
+func makeStack(err error, skip int, options stackOptions) Stack {
+	frames := frames(skip, options)
+	memStats := memStats()
 
 	errStr := ""
 	if err != nil {
@@ -152,7 +150,7 @@ func (d *Debugger) MakeStack(err error, skip int) Stack {
 		Time:     time.Now().UnixMilli(),
 		Frames:   frames,
 		MemStats: memStats,
-		Total:    d.Calls,
+		Total:    options.calls,
 	}
 }
 
@@ -180,7 +178,11 @@ func (d *Debugger) Publish(msg any, formats ...any) error {
 	defer d.mu.Unlock()
 
 	d.Calls++
-	stack := d.MakeStack(err, 4)
+	stack := makeStack(err, 4, stackOptions{
+		strip:    d.strip,
+		maxDepth: d.maxDepth,
+		calls:    d.Calls,
+	})
 
 	for _, callback := range d.callback {
 		go callback(err, stack)
