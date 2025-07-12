@@ -12,7 +12,7 @@ const (
 
 type Logger struct {
 	mu       sync.Mutex
-	callback []func(message string, stack Stack, level int)
+	callback []func(level int, message string, stack Stack)
 	maxDepth int
 	strip    bool
 	Calls    int
@@ -55,13 +55,13 @@ func (l *Logger) Log(level int, msg string, formats ...any) error {
 	})
 
 	for _, callback := range l.callback {
-		go callback(msg, stack, level)
+		go callback(level, msg, stack)
 	}
 
 	return errors.New(msg)
 }
 
-func (l *Logger) AddCallback(callback func(message string, stack Stack, level int)) *Logger {
+func (l *Logger) AddCallback(callback func(level int, message string, stack Stack)) *Logger {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.callback = append(l.callback, callback)
