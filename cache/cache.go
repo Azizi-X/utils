@@ -224,6 +224,13 @@ func (c *Cache) Remove(key string) bool {
 	return exists
 }
 
+func (c *Cache) Length() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return len(c.Items)
+}
+
 func (c *Cache) Check() {
 	c.mu.Lock()
 	for key, item := range c.Items {
