@@ -67,7 +67,7 @@ func newCallback(fn any, keys ...Key) callback {
 	}
 }
 
-func New[T any](name string) *Event[T] {
+func New[T eventInter](name string) *Event[T] {
 	event := Event[T]{
 		Name: name,
 	}
