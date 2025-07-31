@@ -36,17 +36,58 @@ func UniqueCode(data any, length int) (string, error) {
 
 func hashStruct(hash hash.Hash, data any) error {
 	value := reflect.ValueOf(data)
-	if value.Kind() != reflect.Ptr || value.Elem().Kind() != reflect.Struct {
-		return fmt.Errorf("hashStruct: value must be a pointer to a struct")
+	if value.Kind() != reflect.Ptr {
+		return fmt.Errorf("hashStruct: value must be a pointer to a struct or slice of structs")
 	}
 
 	value = value.Elem()
 
+	switch value.Kind() {
+	case reflect.Struct:
+		return hashSingleStruct(hash, value)
+	case reflect.Slice:
+		for i := 0; i < value.Len(); i++ {
+			item := value.Index(i)
+			if item.Kind() == reflect.Ptr {
+				item = item.Elem()
+			}
+			if item.Kind() != reflect.Struct {
+				return fmt.Errorf("hashStruct: slice must contain structs or pointers to structs")
+			}
+			if err := hashSingleStruct(hash, item); err != nil {
+				return err
+			}
+		}
+		return nil
+	default:
+		return fmt.Errorf("hashStruct: value must be a pointer to a struct or slice of structs")
+	}
+}
+
+func hashSingleStruct(hash hash.Hash, value reflect.Value) error {
 	fields := make([]fieldData, 0)
 
-	for i := range value.NumField() {
+	for i := 0; i < value.NumField(); i++ {
 		field := value.Field(i)
 		fieldType := value.Type().Field(i)
+
+		if fieldType.PkgPath != "" {
+			continue
+		}
+
+		hash_tag := fieldType.Tag.Get("hashes")
+
+		switch hash_tag {
+		case "-", "ignore", "false":
+			continue
+		}
+
+		if hash_tag == "" {
+			switch fieldType.Tag.Get("json") {
+			case "-":
+				continue
+			}
+		}
 
 		switch field.Kind() {
 		case reflect.Ptr, reflect.Slice, reflect.Map, reflect.Func:
