@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"hash"
+	"hash/crc32"
 	"reflect"
 	"strings"
 )
@@ -110,4 +111,11 @@ func hashSingleStruct(hash hash.Hash, value reflect.Value) error {
 	}
 
 	return nil
+}
+
+func ShortHash(input string, length int) string {
+	hash := fmt.Sprintf("%08x", crc32.ChecksumIEEE([]byte(input)))
+	length = min(length, len(hash))
+
+	return hash[:length]
 }
