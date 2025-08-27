@@ -64,6 +64,14 @@ func (rd *EvictingSet[T]) Items() []T {
 	return result
 }
 
+func (rd *EvictingSet[T]) Clear() {
+	rd.mu.Lock()
+	defer rd.mu.Unlock()
+
+	rd.values = make(map[T]struct{})
+	rd.order = rd.order[:0]
+}
+
 func (rd *EvictingSet[T]) Exists(items ...T) bool {
 	rd.mu.RLock()
 	exists := slices.ContainsFunc(items, func(item T) bool {

@@ -63,6 +63,14 @@ func (rd *EvictingMap[K, V]) Items() []V {
 	return result
 }
 
+func (rd *EvictingMap[K, V]) Clear() {
+	rd.mu.Lock()
+	defer rd.mu.Unlock()
+
+	rd.values = make(map[K]V)
+	rd.order = rd.order[:0]
+}
+
 func (rd *EvictingMap[K, V]) Get(item K) (V, bool) {
 	rd.mu.RLock()
 	value, exists := rd.values[item]
