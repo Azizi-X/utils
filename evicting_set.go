@@ -51,6 +51,19 @@ func (rd *EvictingSet[T]) Remove(item T) {
 	rd.mu.Unlock()
 }
 
+func (rd *EvictingSet[T]) Items() []T {
+	rd.mu.RLock()
+	defer rd.mu.RUnlock()
+
+	result := make([]T, 0, len(rd.order))
+	for _, key := range rd.order {
+		if _, ok := rd.values[key]; ok {
+			result = append(result, key)
+		}
+	}
+	return result
+}
+
 func (rd *EvictingSet[T]) Exists(items ...T) bool {
 	rd.mu.RLock()
 	exists := slices.ContainsFunc(items, func(item T) bool {
