@@ -15,11 +15,11 @@ type Context struct {
 	canceled   bool
 }
 
-func (ctx *Context) NewChildCtx() Context {
+func (ctx *Context) NewCtx() Context {
 	return NewContext(ctx.Context)
 }
 
-func (ctx *Context) NewChildCtxTimeout(timeout time.Duration) Context {
+func (ctx *Context) NewCtxTimeout(timeout time.Duration) Context {
 	return NewCtxTimeout(ctx.Context, timeout)
 }
 
