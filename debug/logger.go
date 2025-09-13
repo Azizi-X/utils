@@ -6,13 +6,15 @@ import (
 	"sync"
 )
 
+type LogLevel int
+
 const (
-	Verbose = 1
+	Verbose LogLevel = 1
 )
 
 type Logger struct {
 	mu       sync.Mutex
-	callback []func(level int, message string, stack Stack)
+	callback []func(level LogLevel, message string, stack Stack)
 	maxDepth int
 	strip    bool
 	Calls    int
@@ -36,7 +38,7 @@ func (l *Logger) Verbose(msg string, formats ...any) error {
 	return l.Log(Verbose, msg, formats...)
 }
 
-func (l *Logger) Log(level int, msg string, formats ...any) error {
+func (l *Logger) Log(level LogLevel, msg string, formats ...any) error {
 	if l == nil {
 		return nil
 	}
@@ -61,7 +63,7 @@ func (l *Logger) Log(level int, msg string, formats ...any) error {
 	return errors.New(msg)
 }
 
-func (l *Logger) AddCallback(callback func(level int, message string, stack Stack)) *Logger {
+func (l *Logger) AddCallback(callback func(level LogLevel, message string, stack Stack)) *Logger {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.callback = append(l.callback, callback)

@@ -22,166 +22,171 @@ const (
 )
 
 var (
-	SleepTimer = 2 * time.Second
-	MaxEntries = 2000
+	CheckInterval time.Duration = 5000
+	MaxEntries    int           = 2000
+
+	ErrCacheNotFound = fmt.Errorf("cache not found")
+	ErrCacheExpired  = fmt.Errorf("cache expired")
 )
 
 type cacheOption int
 
-type cacheItem struct {
-	Bytes    []byte
+type cacheIter interface {
+	GetItems() [][]byte
+}
+
+type keeperIter interface {
+	Add(cache cacheIter)
+	GetItems() [][][]byte
+}
+
+type CacheKeeper struct {
+	Caches []cacheIter
+	mu     sync.Mutex
+}
+
+func NewKeeper() *CacheKeeper {
+	return &CacheKeeper{}
+}
+
+func (ck *CacheKeeper) Add(cache cacheIter) {
+	ck.mu.Lock()
+	ck.Caches = append(ck.Caches, cache)
+	ck.mu.Unlock()
+}
+
+func (ck *CacheKeeper) GetItems() (items [][][]byte) {
+	ck.mu.Lock()
+	defer ck.mu.Unlock()
+
+	for _, cache := range ck.Caches {
+		items = append(items, cache.GetItems())
+	}
+
+	return nil
+}
+
+type cacheItem[T any] struct {
 	Err      error
 	Expires  time.Time
 	Duration time.Duration
-	Any      any
+	Value    T
 }
 
-type Cache struct {
-	Items map[string]cacheItem
-	mu    sync.Mutex
-	Ctx   context.Context
+type Cache[T any] struct {
+	Items     map[string]cacheItem[T]
+	mu        sync.RWMutex
+	Ctx       context.Context
+	lastCheck time.Time
 }
 
-func NewCache(ctx context.Context) *Cache {
-	cache := &Cache{Items: map[string]cacheItem{}, Ctx: ctx}
-
-	go cache.loop()
-
-	return cache
+func NewCache[T any](ctx context.Context) *Cache[T] {
+	return &Cache[T]{Items: map[string]cacheItem[T]{}, Ctx: ctx}
 }
 
-func (c *Cache) Exists(key string, options ...cacheOption) bool {
+func (c *Cache[T]) Keeper(keeper keeperIter) *Cache[T] {
+	keeper.Add(c)
+	return c
+}
+
+func (c *Cache[T]) Exists(key string, options ...cacheOption) bool {
+	v, err := c.GetErr(key, options...)
+	return v != nil || err != nil
+}
+
+func (c *Cache[T]) ExistsSet(key string, data T, expires time.Duration, options ...cacheOption) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	item, ok := c.Items[key]
-	if !ok {
-		return false
-	}
-
-	if item.Duration != NoExpire && item.Expires.Before(time.Now()) {
-		delete(c.Items, key)
-		return false
-	}
-
-	if slices.Contains(options, ResetTimer) {
-		item.Expires = time.Now().Add(item.Duration)
-	}
-
-	return true
-}
-
-func (c *Cache) ExistsSet(key string, data any, expires time.Duration, options ...cacheOption) bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	_, err := c.getItemUnsafe(key, options...)
+	_, err := c.getUnsafe(key, options...)
 	if err == nil {
 		return true
 	}
 
-	c.setUnsafe(key, data, nil, expires)
+	c.setUnsafe(key, &data, nil, expires)
 
 	return false
 }
 
-func (c *Cache) GetItems() [][]byte {
+func (c *Cache[T]) GetSet(key string, data T, expires time.Duration, options ...cacheOption) *T {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	items := make([][]byte, 0, len(c.Items))
-	for _, v := range c.Items {
-		items = append(items, v.Bytes)
+	v, err := c.getUnsafe(key, options...)
+	if v != nil && err != nil {
+		return nil
+	} else if v != nil {
+		return &v.Value
 	}
 
-	return items
+	c.setUnsafe(key, &data, nil, expires)
+
+	return nil
 }
 
-func (c *Cache) GetAny(key string, options ...cacheOption) (any, bool) {
-	v, ok, err := c.GetAnyErr(key, options...)
+func (c *Cache[T]) Get(key string, options ...cacheOption) *T {
+	v, err := c.GetErr(key, options...)
 	if err != nil {
-		return nil, false
+		return nil
 	}
 
-	return v, ok
+	return v
 }
 
-func (c *Cache) GetAnyErr(key string, options ...cacheOption) (any, bool, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+func (c *Cache[T]) GetErr(key string, options ...cacheOption) (*T, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 
-	item, ok := c.Items[key]
-	if !ok {
-		return nil, false, nil
+	item, err := c.getUnsafe(key, options...)
+	if item == nil && err != nil {
+		return nil, err
+	} else if err != nil {
+		return &item.Value, err
 	}
 
-	if item.Duration != NoExpire && item.Expires.Before(time.Now()) {
-		delete(c.Items, key)
-		return nil, false, nil
-	}
-
-	if item.Err != nil {
-		return nil, true, item.Err
-	}
-
-	if slices.Contains(options, ResetTimer) {
-		item.Expires = time.Now().Add(item.Duration)
-		c.Items[key] = item
-	}
-
-	return item.Any, true, nil
+	return &item.Value, nil
 }
 
-func (c *Cache) getItemUnsafe(key string, options ...cacheOption) (*cacheItem, error) {
-	item, ok := c.Items[key]
-	if !ok {
-		return nil, fmt.Errorf("cache not found")
-	}
-
-	if item.Duration != NoExpire && item.Expires.Before(time.Now()) {
-		delete(c.Items, key)
-		return nil, fmt.Errorf("cache expired")
-	}
-
-	if item.Err != nil {
-		return nil, item.Err
-	}
-
-	if slices.Contains(options, ResetTimer) {
-		item.Expires = time.Now().Add(item.Duration)
-		c.Items[key] = item
-	}
-
-	return &item, nil
+func (c *Cache[T]) Set(key string, data T, expires ...time.Duration) error {
+	return c.SetErr(key, &data, nil, expires...)
 }
 
-func (c *Cache) Get(key string, v any, options ...cacheOption) (bool, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	item, err := c.getItemUnsafe(key, options...)
-	if err != nil {
-		return false, err
-	}
-
-	return true, json.Unmarshal(item.Bytes, v)
-}
-
-func (c *Cache) Set(key string, data any, expires ...time.Duration) error {
-	return c.SetErr(key, data, nil, expires...)
-}
-
-func (c *Cache) SetErr(key string, data any, err error, expires ...time.Duration) error {
+func (c *Cache[T]) SetErr(key string, data *T, err error, expires ...time.Duration) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	return c.setUnsafe(key, data, err, expires...)
 }
 
-func (c *Cache) setUnsafe(key string, data any, err error, expires ...time.Duration) error {
-	bytes, jsonErr := json.Marshal(data)
-	if jsonErr != nil {
-		return jsonErr
+func (c *Cache[T]) getUnsafe(key string, options ...cacheOption) (*cacheItem[T], error) {
+	item, ok := c.Items[key]
+	if !ok {
+		return nil, ErrCacheNotFound
+	}
+
+	if item.Duration != NoExpire && item.Expires.Before(time.Now()) {
+		delete(c.Items, key)
+		return nil, ErrCacheExpired
+	}
+
+	if item.Err != nil {
+		return &item, item.Err
+	}
+
+	if slices.Contains(options, ResetTimer) {
+		item.Expires = time.Now().Add(item.Duration)
+		c.Items[key] = item
+	}
+
+	c.checkUnsafe()
+
+	return &item, nil
+}
+
+func (c *Cache[T]) setUnsafe(key string, data *T, err error, expires ...time.Duration) error {
+	var holder T
+	if data != nil {
+		holder = *data
 	}
 
 	expiry := NoExpire
@@ -189,30 +194,24 @@ func (c *Cache) setUnsafe(key string, data any, err error, expires ...time.Durat
 		expiry = expires[0]
 	}
 
-	c.Items[key] = cacheItem{Bytes: bytes, Expires: time.Now().Add(expiry), Err: err, Duration: expiry}
+	if item, ok := c.Items[key]; ok {
+		if item.Duration == NoExpire || item.Duration > expiry {
+			expiry = item.Duration
+		}
 
-	return err
-}
-
-func (c *Cache) SetAny(key string, data any, expires ...time.Duration) error {
-	return c.SetAnyErr(key, data, nil, expires...)
-}
-
-func (c *Cache) SetAnyErr(key string, data any, err error, expires ...time.Duration) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	expiry := NoExpire
-	if len(expires) > 0 {
-		expiry = expires[0]
+		if item.Err != nil && err == nil {
+			err = item.Err
+		}
 	}
 
-	c.Items[key] = cacheItem{Expires: time.Now().Add(expiry), Err: err, Duration: expiry, Any: data}
+	c.Items[key] = cacheItem[T]{Expires: time.Now().Add(expiry), Err: err, Duration: expiry, Value: holder}
+
+	c.checkUnsafe()
 
 	return err
 }
 
-func (c *Cache) Remove(key string) bool {
+func (c *Cache[T]) Remove(key string) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -224,32 +223,51 @@ func (c *Cache) Remove(key string) bool {
 	return exists
 }
 
-func (c *Cache) Length() int {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+func (c *Cache[T]) GetItems() [][]byte {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	items := make([][]byte, 0, len(c.Items))
+	for _, v := range c.Items {
+		bytes, _ := json.Marshal(v.Value)
+		items = append(items, bytes)
+	}
+
+	return items
+}
+
+func (c *Cache[T]) Length() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 
 	return len(c.Items)
 }
 
-func (c *Cache) Check() {
-	c.mu.Lock()
+func (c *Cache[T]) checkUnsafe() {
+	now := time.Now()
+
+	if time.Since(c.lastCheck) < CheckInterval {
+		return
+	}
+
+	c.lastCheck = now
+
 	for key, item := range c.Items {
-		if item.Duration != NoExpire && item.Expires.Before(time.Now()) {
+		if item.Duration != NoExpire && now.After(item.Expires) {
 			delete(c.Items, key)
 		}
 	}
+
 	for len(c.Items) > MaxEntries {
 		for key := range c.Items {
 			delete(c.Items, key)
 			break
 		}
 	}
-	c.mu.Unlock()
 }
 
-func (c *Cache) loop() {
-	for c.Ctx.Err() == nil {
-		time.Sleep(SleepTimer)
-		c.Check()
-	}
+func (c *Cache[T]) Check() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.checkUnsafe()
 }

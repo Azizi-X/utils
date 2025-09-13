@@ -50,6 +50,48 @@ func (rd *EvictingMap[K, V]) Remove(item K) {
 	rd.mu.Unlock()
 }
 
+func (rd *EvictingMap[K, V]) Replace(id K, value V) {
+	rd.Broadcaster.Broadcast(id)
+
+	rd.mu.Lock()
+	_, exists := rd.values[id]
+
+	if rd.allowFunc != nil && !rd.allowFunc(id, value) {
+		rd.mu.Unlock()
+		return
+	}
+
+	if !exists {
+		rd.order = append(rd.order, id)
+	}
+
+	rd.values[id] = value
+
+	for len(rd.values) > rd.max {
+		for key := range rd.values {
+			delete(rd.values, key)
+			break
+		}
+	}
+
+	rd.mu.Unlock()
+}
+
+func (rd *EvictingMap[K, V]) Get(item K) (V, bool) {
+	rd.mu.RLock()
+	value, exists := rd.values[item]
+	rd.mu.RUnlock()
+	return value, exists
+}
+
+func (rd *EvictingMap[K, V]) Clear() {
+	rd.mu.Lock()
+	defer rd.mu.Unlock()
+
+	rd.values = make(map[K]V)
+	rd.order = rd.order[:0]
+}
+
 func (rd *EvictingMap[K, V]) Items() []V {
 	rd.mu.RLock()
 	defer rd.mu.RUnlock()
@@ -61,21 +103,6 @@ func (rd *EvictingMap[K, V]) Items() []V {
 		}
 	}
 	return result
-}
-
-func (rd *EvictingMap[K, V]) Clear() {
-	rd.mu.Lock()
-	defer rd.mu.Unlock()
-
-	rd.values = make(map[K]V)
-	rd.order = rd.order[:0]
-}
-
-func (rd *EvictingMap[K, V]) Get(item K) (V, bool) {
-	rd.mu.RLock()
-	value, exists := rd.values[item]
-	rd.mu.RUnlock()
-	return value, exists
 }
 
 func (rd *EvictingMap[K, V]) Has(items ...K) bool {
