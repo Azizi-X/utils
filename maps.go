@@ -23,6 +23,22 @@ type mapValues[T any] struct {
 
 type mapValuesList[T any] []mapValues[T]
 
+func (lst mapValuesList[T]) Keys() (keys []string) {
+	for _, value := range lst {
+		keys = append(keys, value.Key)
+	}
+
+	return
+}
+
+func (lst mapValuesList[T]) Values() (values []T) {
+	for _, value := range lst {
+		values = append(values, value.Value)
+	}
+
+	return
+}
+
 func (mp *Map[T]) Exists(key string) bool {
 	if mp == nil {
 		return false
