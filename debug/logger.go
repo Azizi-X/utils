@@ -9,7 +9,12 @@ import (
 type LogLevel int
 
 const (
-	Verbose LogLevel = 1
+	_ LogLevel = iota
+
+	Verbose
+
+	numLogLevels
+	MaxLogLevel = numLogLevels - 1
 )
 
 type Logger struct {
