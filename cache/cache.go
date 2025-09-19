@@ -134,8 +134,8 @@ func (c *Cache[T]) Get(key string, options ...cacheOption) *T {
 }
 
 func (c *Cache[T]) GetErr(key string, options ...cacheOption) (*T, error) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
 	item, err := c.getUnsafe(key, options...)
 	if item == nil && err != nil {
