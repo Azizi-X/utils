@@ -474,9 +474,3 @@ func NewList[T any](values ...T) *List[T] {
 		mu:     &sync.RWMutex{},
 	}
 }
-
-func NewMapList[T any]() *Map[*List[T]] {
-	return &Map[*List[T]]{
-		values: map[string]*List[T]{},
-	}
-}
