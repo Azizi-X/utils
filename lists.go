@@ -197,6 +197,24 @@ func (lst *List[T]) GetList() (values []T) {
 	return
 }
 
+func (lst *List[T]) Collect(fn func(T) bool) (values []T) {
+	if lst == nil {
+		return []T{}
+	}
+
+	lst.checkMu()
+	lst.mu.RLock()
+
+	for i := range lst.values {
+		if fn(lst.values[i]) {
+			values = append(values, lst.values[i])
+		}
+	}
+
+	lst.mu.RUnlock()
+	return
+}
+
 func (lst *List[T]) AppendFunc(value T, fn func(item T) (exists bool)) (added bool) {
 	if lst == nil {
 		return false
@@ -204,11 +222,9 @@ func (lst *List[T]) AppendFunc(value T, fn func(item T) (exists bool)) (added bo
 	lst.checkMu()
 	lst.mu.Lock()
 
-	for i := range lst.values {
-		if fn(lst.values[i]) {
-			lst.mu.Unlock()
-			return false
-		}
+	if slices.ContainsFunc(lst.values, fn) {
+		lst.mu.Unlock()
+		return false
 	}
 
 	lst.values = append(lst.values, value)
