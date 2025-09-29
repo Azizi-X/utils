@@ -30,12 +30,7 @@ func (rd *EvictingSet[T]) Add(id T) {
 		rd.order = append(rd.order, id)
 	}
 
-	for len(rd.values) > rd.max {
-		for key := range rd.values {
-			delete(rd.values, key)
-			break
-		}
-	}
+	rd.evictItems()
 
 	rd.mu.Unlock()
 }
@@ -92,6 +87,28 @@ func (rd *EvictingSet[T]) Len() int {
 	length := len(rd.values)
 	rd.mu.RUnlock()
 	return length
+}
+
+func (rd *EvictingSet[T]) SetMax(max int) *EvictingSet[T] {
+	rd.mu.Lock()
+	if rd.max == max {
+		rd.mu.Unlock()
+		return rd
+	}
+
+	rd.max = max
+	rd.evictItems()
+	rd.mu.Unlock()
+
+	return rd
+}
+
+func (rd *EvictingSet[T]) evictItems() {
+	for len(rd.values) > rd.max && len(rd.order) > 0 {
+		evictKey := rd.order[0]
+		rd.order = rd.order[1:]
+		delete(rd.values, evictKey)
+	}
 }
 
 func NewEvictingSet[T comparable](max int) *EvictingSet[T] {
