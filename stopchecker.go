@@ -14,6 +14,16 @@ type StopChecker struct {
 	processes  *List[*StopChecker]
 }
 
+func (sc *StopChecker) Loop(d time.Duration, fn func()) bool {
+	fn()
+
+	timer := time.AfterFunc(d, fn)
+	defer timer.Stop()
+
+	<-sc.Ctx.C()
+	return sc.ShouldStop
+}
+
 func (sc *StopChecker) Sleep(t time.Duration) bool {
 	select {
 	case <-time.After(t):
