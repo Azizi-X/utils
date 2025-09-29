@@ -17,11 +17,14 @@ type StopChecker struct {
 func (sc *StopChecker) Loop(d time.Duration, fn func()) bool {
 	fn()
 
-	timer := time.AfterFunc(d, fn)
-	defer timer.Stop()
-
-	<-sc.Ctx.C()
-	return sc.ShouldStop
+	for {
+		select {
+		case <-time.After(d):
+			fn()
+		case <-sc.Ctx.C():
+			return sc.ShouldStop
+		}
+	}
 }
 
 func (sc *StopChecker) Sleep(t time.Duration) bool {
