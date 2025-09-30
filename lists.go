@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"slices"
 	"sort"
+	"strings"
 	"sync"
 )
 
@@ -183,6 +184,23 @@ func (lst *List[T]) GetListClear() (values []T) {
 	lst.values = []T{}
 	lst.mu.Unlock()
 	return
+}
+
+func (lst *List[T]) Join(sep string) string {
+	if lst == nil {
+		return ""
+	}
+
+	lst.checkMu()
+	lst.mu.RLock()
+
+	var v []string
+	for i := range lst.values {
+		v = append(v, fmt.Sprintf("%v", lst.values[i]))
+	}
+
+	lst.mu.RUnlock()
+	return strings.Join(v, sep)
 }
 
 func (lst *List[T]) GetList() (values []T) {
