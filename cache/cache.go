@@ -90,8 +90,8 @@ func (c *Cache[T]) Keeper(keeper keeperIter) *Cache[T] {
 }
 
 func (c *Cache[T]) Exists(key string, options ...cacheOption) bool {
-	v, err := c.GetErr(key, options...)
-	return v != nil || err != nil
+	v, _ := c.GetErr(key, options...)
+	return v != nil
 }
 
 func (c *Cache[T]) ExistsSet(key string, data T, expires time.Duration, options ...cacheOption) bool {
@@ -271,3 +271,4 @@ func (c *Cache[T]) Check() {
 	defer c.mu.Unlock()
 	c.checkUnsafe()
 }
+
