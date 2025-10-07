@@ -27,6 +27,12 @@ func (sc *StopChecker) Loop(d time.Duration, fn func()) bool {
 	}
 }
 
+func (sc *StopChecker) OnStop(fn func()) {
+	sc.Ctx.SetOnCancel(func(_ string) {
+		fn()
+	})
+}
+
 func (sc *StopChecker) Sleep(t time.Duration) bool {
 	select {
 	case <-time.After(t):
@@ -64,3 +70,4 @@ func NewStopChecker(ctx context.Context, processes *List[*StopChecker], keys ...
 
 	return checker
 }
+
