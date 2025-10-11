@@ -14,7 +14,7 @@ type StopChecker struct {
 	processes  *List[*StopChecker]
 }
 
-func (sc *StopChecker) Loop(d time.Duration, fn func(ctx Context)) bool {
+func (sc *StopChecker) LoopC(d time.Duration, fn func(ctx Context)) bool {
 	ctx := sc.Ctx.NewCtx()
 
 	fn(ctx)
@@ -29,6 +29,12 @@ func (sc *StopChecker) Loop(d time.Duration, fn func(ctx Context)) bool {
 			return sc.ShouldStop
 		}
 	}
+}
+
+func (sc *StopChecker) Loop(d time.Duration, fn func()) bool {
+	return sc.LoopC(d, func(_ Context) {
+		fn()
+	})
 }
 
 func (sc *StopChecker) OnCancel(fn func()) {
@@ -74,6 +80,7 @@ func NewStopChecker(ctx context.Context, processes *List[*StopChecker], keys ...
 
 	return checker
 }
+
 
 
 
