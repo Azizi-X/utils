@@ -6,6 +6,8 @@ import (
 	"time"
 )
 
+var ErrContextTimeout = errors.New("timeout")
+
 type Context struct {
 	Context    context.Context    `json:"-"`
 	CancelFunc context.CancelFunc `json:"-"`
@@ -92,7 +94,7 @@ func NewCtxTimeout(parent context.Context, timeout time.Duration) Context {
 		select {
 		case <-ctx.C():
 		case <-ticker:
-			ctx.CancelWithReason("timeout")
+			ctx.CancelWithErr(ErrContextTimeout)
 		}
 	}()
 
