@@ -111,6 +111,18 @@ func (event *Event[T]) Publish(args ...any) {
 	}
 }
 
+func (event *Event[T]) Clone() *Event[T] {
+	new := &Event[T]{
+		Name: event.Name,
+	}
+
+	loaded := *event.Callbacks.Load()
+	callbacks := slices.Clone(loaded)
+	new.Callbacks.Store(&callbacks)
+
+	return new
+}
+
 func newCallback(fn any, ctx ctxInter, keys ...Key) callback {
 	return callback{
 		Fn:   fn.(eventInter),
@@ -129,3 +141,4 @@ func New[T eventInter](name string) *Event[T] {
 
 	return &event
 }
+
