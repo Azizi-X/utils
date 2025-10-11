@@ -14,14 +14,18 @@ type StopChecker struct {
 	processes  *List[*StopChecker]
 }
 
-func (sc *StopChecker) Loop(d time.Duration, fn func()) bool {
-	fn()
+func (sc *StopChecker) Loop(d time.Duration, fn func(ctx Context)) bool {
+	ctx := sc.Ctx.NewCtx()
+
+	fn(ctx)
 
 	for {
 		select {
 		case <-time.After(d):
-			fn()
+			fn(ctx)
 		case <-sc.Ctx.C():
+			return sc.ShouldStop
+		case <-ctx.C():
 			return sc.ShouldStop
 		}
 	}
@@ -70,5 +74,6 @@ func NewStopChecker(ctx context.Context, processes *List[*StopChecker], keys ...
 
 	return checker
 }
+
 
 
