@@ -363,11 +363,11 @@ func (mp *Map[T]) checkMu() {
 			mp.mu = &sync.RWMutex{}
 		}
 
-		mp.mu.Lock()
 		if mp.values == nil {
+			mp.mu.Lock()
 			mp.values = map[string]T{}
+			mp.mu.Unlock()
 		}
-		mp.mu.Unlock()
 		checkMu.Unlock()
 	}
 }
@@ -386,3 +386,4 @@ func NewMapInit[T any](values map[string]T) *Map[T] {
 	}
 	return newMap
 }
+
