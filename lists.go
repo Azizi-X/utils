@@ -25,7 +25,7 @@ type listCore[T any] struct {
 }
 
 type List[T any] struct {
-	*listCore[T]
+	rawCore *listCore[T]
 }
 
 func (lst *List[T]) Reverse() {
@@ -33,11 +33,11 @@ func (lst *List[T]) Reverse() {
 		return
 	}
 
-	lst.init()
+	core := lst.init()
 
-	lst.mu.Lock()
-	slices.Reverse(lst.values)
-	lst.mu.Unlock()
+	core.mu.Lock()
+	slices.Reverse(core.values)
+	core.mu.Unlock()
 }
 
 func (lst *List[T]) RandomItem() *T {
@@ -45,21 +45,21 @@ func (lst *List[T]) RandomItem() *T {
 		return nil
 	}
 
-	lst.init()
+	core := lst.init()
 
-	lst.mu.RLock()
-	randomItem := GetRandomItem(lst.values)
-	lst.mu.RUnlock()
+	core.mu.RLock()
+	randomItem := GetRandomItem(core.values)
+	core.mu.RUnlock()
 	return randomItem
 }
 
-func (lst *List[T]) checkLimit() {
-	if lst.limit == nil {
+func (core *listCore[T]) checkLimit() {
+	if core.limit == nil {
 		return
 	}
 
-	for len(lst.values) > *lst.limit {
-		lst.values = lst.values[1:]
+	for len(core.values) > *core.limit {
+		core.values = core.values[1:]
 	}
 }
 
@@ -68,11 +68,11 @@ func (lst *List[T]) SetEqual(fn func(a, b T) bool) *List[T] {
 		return nil
 	}
 
-	lst.init()
+	core := lst.init()
 
-	lst.mu.Lock()
-	lst.equal = fn
-	lst.mu.Unlock()
+	core.mu.Lock()
+	core.equal = fn
+	core.mu.Unlock()
 
 	return lst
 }
@@ -82,12 +82,12 @@ func (lst *List[T]) SetLimit(limit int) *List[T] {
 		return nil
 	}
 
-	lst.init()
+	core := lst.init()
 
-	lst.mu.Lock()
-	lst.limit = &limit
-	lst.checkLimit()
-	lst.mu.Unlock()
+	core.mu.Lock()
+	core.limit = &limit
+	core.checkLimit()
+	core.mu.Unlock()
 
 	return lst
 }
@@ -97,19 +97,19 @@ func (lst *List[T]) Contains(value T) bool {
 		return false
 	}
 
-	lst.init()
+	core := lst.init()
 
-	lst.mu.RLock()
+	core.mu.RLock()
 
-	for i := range lst.values {
-		if (lst.equal != nil && lst.equal(lst.values[i], value)) ||
-			reflect.DeepEqual(lst.values[i], value) {
-			lst.mu.RUnlock()
+	for i := range core.values {
+		if (core.equal != nil && core.equal(core.values[i], value)) ||
+			reflect.DeepEqual(core.values[i], value) {
+			core.mu.RUnlock()
 			return true
 		}
 	}
 
-	lst.mu.RUnlock()
+	core.mu.RUnlock()
 	return false
 }
 
@@ -119,16 +119,16 @@ func (lst *List[T]) Last() (T, bool) {
 		return empty, false
 	}
 
-	lst.init()
+	core := lst.init()
 
-	lst.mu.RLock()
+	core.mu.RLock()
 
-	if len(lst.values) > 0 {
-		lst.mu.RUnlock()
-		return lst.values[len(lst.values)-1], true
+	if len(core.values) > 0 {
+		core.mu.RUnlock()
+		return core.values[len(core.values)-1], true
 	}
 
-	lst.mu.RUnlock()
+	core.mu.RUnlock()
 
 	var empty T
 	return empty, false
@@ -136,13 +136,13 @@ func (lst *List[T]) Last() (T, bool) {
 
 func (lst *List[T]) GetIndex(index int) (T, bool) {
 	if lst != nil {
-		lst.init()
-		lst.mu.RLock()
-		if index >= 0 && index < len(lst.values) {
-			lst.mu.RUnlock()
-			return lst.values[index], true
+		core := lst.init()
+		core.mu.RLock()
+		if index >= 0 && index < len(core.values) {
+			core.mu.RUnlock()
+			return core.values[index], true
 		}
-		lst.mu.RUnlock()
+		core.mu.RUnlock()
 	}
 	var empty T
 	return empty, false
@@ -157,11 +157,11 @@ func (lst *List[T]) Length() int {
 		return 0
 	}
 
-	lst.init()
+	core := lst.init()
 
-	lst.mu.RLock()
-	length := len(lst.values)
-	lst.mu.RUnlock()
+	core.mu.RLock()
+	length := len(core.values)
+	core.mu.RUnlock()
 	return length
 }
 
@@ -170,13 +170,13 @@ func (lst *List[T]) Sort(fn func(i, j T) bool) {
 		return
 	}
 
-	lst.init()
+	core := lst.init()
 
-	lst.mu.Lock()
-	sort.Slice(lst.values, func(i, j int) bool {
-		return fn(lst.values[i], lst.values[j])
+	core.mu.Lock()
+	sort.Slice(core.values, func(i, j int) bool {
+		return fn(core.values[i], core.values[j])
 	})
-	lst.mu.Unlock()
+	core.mu.Unlock()
 }
 
 func (lst *List[T]) GetListClear() (values []T) {
@@ -184,11 +184,11 @@ func (lst *List[T]) GetListClear() (values []T) {
 		return []T{}
 	}
 
-	lst.init()
-	lst.mu.Lock()
-	values = append(values, lst.values...)
-	lst.values = []T{}
-	lst.mu.Unlock()
+	core := lst.init()
+	core.mu.Lock()
+	values = append(values, core.values...)
+	core.values = []T{}
+	core.mu.Unlock()
 	return
 }
 
@@ -197,15 +197,15 @@ func (lst *List[T]) Join(sep string) string {
 		return ""
 	}
 
-	lst.init()
-	lst.mu.RLock()
+	core := lst.init()
+	core.mu.RLock()
 
 	var v []string
-	for i := range lst.values {
-		v = append(v, fmt.Sprintf("%v", lst.values[i]))
+	for i := range core.values {
+		v = append(v, fmt.Sprintf("%v", core.values[i]))
 	}
 
-	lst.mu.RUnlock()
+	core.mu.RUnlock()
 	return strings.Join(v, sep)
 }
 
@@ -214,10 +214,10 @@ func (lst *List[T]) RawList() (values []T) {
 		return []T{}
 	}
 
-	lst.init()
-	lst.mu.RLock()
-	values = lst.values
-	lst.mu.RUnlock()
+	core := lst.init()
+	core.mu.RLock()
+	values = core.values
+	core.mu.RUnlock()
 	return values
 }
 
@@ -226,10 +226,10 @@ func (lst *List[T]) GetList() (values []T) {
 		return []T{}
 	}
 
-	lst.init()
-	lst.mu.RLock()
-	values = append(values, lst.values...)
-	lst.mu.RUnlock()
+	core := lst.init()
+	core.mu.RLock()
+	values = append(values, core.values...)
+	core.mu.RUnlock()
 	return
 }
 
@@ -238,16 +238,16 @@ func (lst *List[T]) Collect(fn func(T) bool) (values []T) {
 		return []T{}
 	}
 
-	lst.init()
-	lst.mu.RLock()
+	core := lst.init()
+	core.mu.RLock()
 
-	for i := range lst.values {
-		if fn(lst.values[i]) {
-			values = append(values, lst.values[i])
+	for i := range core.values {
+		if fn(core.values[i]) {
+			values = append(values, core.values[i])
 		}
 	}
 
-	lst.mu.RUnlock()
+	core.mu.RUnlock()
 	return
 }
 
@@ -255,36 +255,36 @@ func (lst *List[T]) AppendFunc(value T, fn func(item T) (exists bool)) (added bo
 	if lst == nil {
 		return false
 	}
-	lst.init()
-	lst.mu.Lock()
+	core := lst.init()
+	core.mu.Lock()
 
-	if slices.ContainsFunc(lst.values, fn) {
-		lst.mu.Unlock()
+	if slices.ContainsFunc(core.values, fn) {
+		core.mu.Unlock()
 		return false
 	}
 
-	lst.values = append(lst.values, value)
-	lst.checkLimit()
-	lst.mu.Unlock()
+	core.values = append(core.values, value)
+	core.checkLimit()
+	core.mu.Unlock()
 	return true
 }
 
-func (lst *List[T]) appendDeepEqual(value T) bool {
-	if lst == nil {
+func (lst *List[T]) appendDeepEqual(core *listCore[T], value T) bool {
+	if core == nil {
 		return false
 	}
 
-	lst.mu.Lock()
-	for i := range lst.values {
-		if reflect.DeepEqual(lst.values[i], value) {
-			lst.mu.Unlock()
+	core.mu.Lock()
+	for i := range core.values {
+		if reflect.DeepEqual(core.values[i], value) {
+			core.mu.Unlock()
 			return false
 		}
 	}
 
-	lst.values = append(lst.values, value)
-	lst.checkLimit()
-	lst.mu.Unlock()
+	core.values = append(core.values, value)
+	core.checkLimit()
+	core.mu.Unlock()
 
 	return true
 }
@@ -294,25 +294,25 @@ func (lst *List[T]) AppendUnique(value T) bool {
 		return false
 	}
 
-	lst.init()
+	core := lst.init()
 
-	if lst.equal == nil {
-		return lst.appendDeepEqual(value)
+	if core.equal == nil {
+		return lst.appendDeepEqual(core, value)
 	}
 
-	lst.mu.Lock()
+	core.mu.Lock()
 
-	for i := range lst.values {
-		if lst.equal(lst.values[i], value) {
-			lst.mu.Unlock()
+	for i := range core.values {
+		if core.equal(core.values[i], value) {
+			core.mu.Unlock()
 			return false
 		}
 	}
 
-	lst.values = append(lst.values, value)
-	lst.checkLimit()
+	core.values = append(core.values, value)
+	core.checkLimit()
 
-	lst.mu.Unlock()
+	core.mu.Unlock()
 	return true
 }
 
@@ -321,12 +321,12 @@ func (lst *List[T]) ContainsFunc(fn func(value T) bool) bool {
 		return false
 	}
 
-	lst.init()
+	core := lst.init()
 
-	lst.mu.RLock()
-	defer lst.mu.RUnlock()
+	core.mu.RLock()
+	defer core.mu.RUnlock()
 
-	return slices.ContainsFunc(lst.values, fn)
+	return slices.ContainsFunc(core.values, fn)
 }
 
 func (lst *List[T]) DeleteFuncList(fn func(value T) bool) []T {
@@ -334,10 +334,10 @@ func (lst *List[T]) DeleteFuncList(fn func(value T) bool) []T {
 		return nil
 	}
 
-	lst.init()
+	core := lst.init()
 
-	lst.mu.Lock()
-	defer lst.mu.Unlock()
+	core.mu.Lock()
+	defer core.mu.Unlock()
 
 	var removed []T
 
@@ -351,7 +351,7 @@ func (lst *List[T]) DeleteFuncList(fn func(value T) bool) []T {
 		return remove
 	}
 
-	lst.values = slices.DeleteFunc(lst.values, remove)
+	core.values = slices.DeleteFunc(core.values, remove)
 
 	return removed
 }
@@ -361,21 +361,23 @@ func (lst *List[T]) DeleteFunc(fn func(value T) bool) bool {
 		return false
 	}
 
-	lst.init()
+	core := lst.init()
 
-	lst.mu.Lock()
-	defer lst.mu.Unlock()
+	core.mu.Lock()
+	defer core.mu.Unlock()
 
-	before := len(lst.values)
-	lst.values = slices.DeleteFunc(lst.values, fn)
+	before := len(core.values)
+	core.values = slices.DeleteFunc(core.values, fn)
 
-	return before != len(lst.values)
+	return before != len(core.values)
 }
 
 func (lst *List[T]) Remove(value T) []T {
+	core := lst.init()
+
 	return lst.DeleteFuncList(func(v T) bool {
-		if lst.equal != nil {
-			return lst.equal(v, value)
+		if core.equal != nil {
+			return core.equal(v, value)
 		}
 		return reflect.DeepEqual(v, value)
 	})
@@ -386,19 +388,19 @@ func (lst *List[T]) Modify(fn func(value *T) bool) []T {
 		return nil
 	}
 
-	lst.init()
+	core := lst.init()
 
-	lst.mu.Lock()
+	core.mu.Lock()
 
 	var modified []T
-	for i := range lst.values {
-		if fn(&lst.values[i]) {
-			modified = append(modified, lst.values[i])
+	for i := range core.values {
+		if fn(&core.values[i]) {
+			modified = append(modified, core.values[i])
 		}
 	}
 
-	lst.checkLimit()
-	lst.mu.Unlock()
+	core.checkLimit()
+	core.mu.Unlock()
 
 	return modified
 }
@@ -408,19 +410,19 @@ func (lst *List[T]) Insert(index int, values ...T) {
 		return
 	}
 
-	lst.init()
+	core := lst.init()
 
-	lst.mu.Lock()
+	core.mu.Lock()
 
 	index = max(index, 0)
-	index = min(index, len(lst.values))
+	index = min(index, len(core.values))
 
-	lst.values = append(lst.values, make([]T, len(values))...)
-	copy(lst.values[index+len(values):], lst.values[index:])
-	copy(lst.values[index:], values)
+	core.values = append(core.values, make([]T, len(values))...)
+	copy(core.values[index+len(values):], core.values[index:])
+	copy(core.values[index:], values)
 
-	lst.checkLimit()
-	lst.mu.Unlock()
+	core.checkLimit()
+	core.mu.Unlock()
 }
 
 func (lst *List[T]) Append(values ...T) {
@@ -428,53 +430,53 @@ func (lst *List[T]) Append(values ...T) {
 		return
 	}
 
-	lst.init()
+	core := lst.init()
 
-	lst.mu.Lock()
-	lst.values = append(lst.values, values...)
-	lst.checkLimit()
-	lst.mu.Unlock()
+	core.mu.Lock()
+	core.values = append(core.values, values...)
+	core.checkLimit()
+	core.mu.Unlock()
 }
 
 func (lst *List[T]) SetList(values []T) {
 	if lst == nil {
 		return
 	}
-	lst.init()
+	core := lst.init()
 
-	lst.mu.Lock()
-	lst.values = values
-	lst.checkLimit()
-	lst.mu.Unlock()
+	core.mu.Lock()
+	core.values = values
+	core.checkLimit()
+	core.mu.Unlock()
 }
 
 func (lst *List[T]) Clear() {
 	if lst == nil {
 		return
 	}
-	lst.init()
+	core := lst.init()
 
-	lst.mu.Lock()
-	lst.values = []T{}
-	lst.mu.Unlock()
+	core.mu.Lock()
+	core.values = []T{}
+	core.mu.Unlock()
 }
 
 func (lst *List[T]) IsZero() bool {
-	lst.init()
+	core := lst.init()
 
-	lst.mu.RLock()
-	defer lst.mu.RUnlock()
+	core.mu.RLock()
+	defer core.mu.RUnlock()
 
-	return len(lst.values) == 0
+	return len(core.values) == 0
 }
 
 func (lst List[T]) MarshalJSON() ([]byte, error) {
-	lst.init()
+	core := lst.init()
 
-	lst.mu.Lock()
-	defer lst.mu.Unlock()
+	core.mu.Lock()
+	defer core.mu.Unlock()
 
-	return json.Marshal(lst.values)
+	return json.Marshal(core.values)
 }
 
 func (lst *List[T]) UnmarshalJSON(data []byte) error {
@@ -482,10 +484,10 @@ func (lst *List[T]) UnmarshalJSON(data []byte) error {
 		return nil
 	}
 
-	lst.init()
+	core := lst.init()
 
-	lst.mu.Lock()
-	defer lst.mu.Unlock()
+	core.mu.Lock()
+	defer core.mu.Unlock()
 
 	var values []T
 	if err := json.Unmarshal(data, &values); err != nil {
@@ -497,17 +499,21 @@ func (lst *List[T]) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
-	lst.values = values
+	core.values = values
 	return nil
 }
 
-func (lst *List[T]) init() {
-	addr := (*unsafe.Pointer)(unsafe.Pointer(&lst.listCore))
+func (lst *List[T]) init() *listCore[T] {
+	addr := (*unsafe.Pointer)(unsafe.Pointer(&lst.rawCore))
 	core := atomic.LoadPointer(addr)
 
 	if core == nil {
-		atomic.CompareAndSwapPointer(addr, nil, unsafe.Pointer(newListCore[T]()))
+		newCore := unsafe.Pointer(newListCore[T]())
+		atomic.CompareAndSwapPointer(addr, nil, newCore)
+		return lst.init()
 	}
+
+	return (*listCore[T])(core)
 }
 
 func GetRandomItem[T any](lst []T) *T {
@@ -526,6 +532,6 @@ func newListCore[T any](values ...T) *listCore[T] {
 
 func NewList[T any](values ...T) *List[T] {
 	return &List[T]{
-		listCore: newListCore(values...),
+		rawCore: newListCore(values...),
 	}
 }
