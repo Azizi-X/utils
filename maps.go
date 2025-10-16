@@ -5,15 +5,21 @@ import (
 	"fmt"
 	"maps"
 	"sync"
+	"sync/atomic"
+	"unsafe"
 )
 
 var (
 	IgnoreInvalidMapTypes = true
 )
 
-type Map[T any] struct {
-	mu     *sync.RWMutex
+type mapCore[T any] struct {
+	mu     sync.RWMutex
 	values map[string]T
+}
+
+type Map[T any] struct {
+	*mapCore[T]
 }
 
 type mapValues[T any] struct {
@@ -44,7 +50,7 @@ func (mp *Map[T]) Exists(key string) bool {
 		return false
 	}
 
-	mp.checkMu()
+	mp.init()
 
 	mp.mu.RLock()
 	_, exists := mp.values[key]
@@ -57,7 +63,7 @@ func (mp *Map[T]) Length() int {
 		return 0
 	}
 
-	mp.checkMu()
+	mp.init()
 
 	mp.mu.RLock()
 	length := len(mp.values)
@@ -65,12 +71,30 @@ func (mp *Map[T]) Length() int {
 	return length
 }
 
-func (mp *Map[T]) GetMapList(clear ...bool) (lst []T) {
+func (mp *Map[T]) ContainsFunc(fn func(T) bool) bool {
+	if mp == nil {
+		return false
+	}
+
+	mp.init()
+
+	mp.mu.RLock()
+	for _, value := range mp.values {
+		if fn(value) {
+			mp.mu.RUnlock()
+			return true
+		}
+	}
+	mp.mu.RUnlock()
+	return false
+}
+
+func (mp *Map[T]) GetList(clear ...bool) (lst []T) {
 	if mp == nil {
 		return []T{}
 	}
 
-	mp.checkMu()
+	mp.init()
 
 	doClear := len(clear) > 0 && clear[0]
 
@@ -98,7 +122,7 @@ func (mp *Map[T]) GetListAndMap() (lst []T, mapList map[string]T) {
 		return []T{}, map[string]T{}
 	}
 
-	mp.checkMu()
+	mp.init()
 
 	mp.mu.RLock()
 	for _, value := range mp.values {
@@ -115,7 +139,7 @@ func (mp *Map[T]) GetMap(clear ...bool) map[string]T {
 		return map[string]T{}
 	}
 
-	mp.checkMu()
+	mp.init()
 
 	doClear := len(clear) > 0 && clear[0]
 
@@ -143,7 +167,7 @@ func (mp *Map[T]) SetMap(value map[string]T) {
 		return
 	}
 
-	mp.checkMu()
+	mp.init()
 
 	mp.mu.Lock()
 	mp.values = value
@@ -155,7 +179,7 @@ func (mp *Map[T]) Set(key string, value T, conds ...func(length int) (set bool, 
 		return false
 	}
 
-	mp.checkMu()
+	mp.init()
 
 	mp.mu.Lock()
 
@@ -181,7 +205,7 @@ func (mp *Map[T]) SetUnique(key string, value T) bool {
 		return false
 	}
 
-	mp.checkMu()
+	mp.init()
 
 	mp.mu.Lock()
 	_, exists := mp.values[key]
@@ -198,7 +222,7 @@ func (mp *Map[T]) Get(key string) (T, bool) {
 		return empty, false
 	}
 
-	mp.checkMu()
+	mp.init()
 
 	mp.mu.RLock()
 	value, exists := mp.values[key]
@@ -212,7 +236,7 @@ func (mp *Map[T]) GetFrom(keys ...string) (T, bool) {
 		return empty, false
 	}
 
-	mp.checkMu()
+	mp.init()
 
 	mp.mu.RLock()
 	defer mp.mu.RUnlock()
@@ -234,7 +258,7 @@ func (mp *Map[T]) GetSet(key string, value T) (T, bool) {
 		return empty, false
 	}
 
-	mp.checkMu()
+	mp.init()
 
 	mp.mu.Lock()
 	_, exists := mp.values[key]
@@ -251,7 +275,7 @@ func (mp *Map[T]) DeleteFunc(fn func(key string, value T) bool) mapValuesList[T]
 		return nil
 	}
 
-	mp.checkMu()
+	mp.init()
 
 	mp.mu.Lock()
 	var deleted mapValuesList[T]
@@ -275,7 +299,7 @@ func (mp *Map[T]) Remove(key string) *T {
 		return nil
 	}
 
-	mp.checkMu()
+	mp.init()
 
 	mp.mu.Lock()
 	v, exists := mp.values[key]
@@ -293,7 +317,7 @@ func (mp *Map[T]) Modify(fn func(mp *map[string]T)) {
 	if mp == nil {
 		return
 	}
-	mp.checkMu()
+	mp.init()
 
 	mp.mu.Lock()
 	fn(&mp.values)
@@ -308,7 +332,7 @@ func (mp *Map[T]) Clear() {
 	if mp == nil {
 		return
 	}
-	mp.checkMu()
+	mp.init()
 
 	mp.mu.Lock()
 	mp.clearUnsafe()
@@ -316,7 +340,7 @@ func (mp *Map[T]) Clear() {
 }
 
 func (mp Map[T]) MarshalJSON() ([]byte, error) {
-	mp.checkMu()
+	mp.init()
 
 	mp.mu.Lock()
 	defer mp.mu.Unlock()
@@ -328,7 +352,7 @@ func (mp *Map[T]) UnmarshalJSON(data []byte) error {
 	if mp == nil {
 		return nil
 	}
-	mp.checkMu()
+	mp.init()
 
 	mp.mu.Lock()
 	defer mp.mu.Unlock()
@@ -348,7 +372,7 @@ func (mp *Map[T]) UnmarshalJSON(data []byte) error {
 }
 
 func (mp *Map[T]) IsZero() bool {
-	mp.checkMu()
+	mp.init()
 
 	mp.mu.RLock()
 	defer mp.mu.RUnlock()
@@ -356,26 +380,24 @@ func (mp *Map[T]) IsZero() bool {
 	return len(mp.values) == 0
 }
 
-func (mp *Map[T]) checkMu() {
-	if mp.mu == nil || mp.values == nil {
-		checkMu.Lock()
-		if mp.mu == nil {
-			mp.mu = &sync.RWMutex{}
-		}
+func (mp *Map[T]) init() {
+	addr := (*unsafe.Pointer)(unsafe.Pointer(&mp.mapCore))
+	core := atomic.LoadPointer(addr)
 
-		if mp.values == nil {
-			mp.mu.Lock()
-			mp.values = map[string]T{}
-			mp.mu.Unlock()
-		}
-		checkMu.Unlock()
+	if core == nil {
+		atomic.CompareAndSwapPointer(addr, nil, unsafe.Pointer(newMapCore[T]()))
+	}
+}
+
+func newMapCore[T any]() *mapCore[T] {
+	return &mapCore[T]{
+		values: map[string]T{},
 	}
 }
 
 func NewMap[T any]() *Map[T] {
 	return &Map[T]{
-		values: map[string]T{},
-		mu:     &sync.RWMutex{},
+		mapCore: newMapCore[T](),
 	}
 }
 
@@ -386,4 +408,3 @@ func NewMapInit[T any](values map[string]T) *Map[T] {
 	}
 	return newMap
 }
-

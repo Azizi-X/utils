@@ -9,18 +9,23 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"unsafe"
 )
 
 var (
-	checkMu                sync.Mutex
 	IgnoreInvalidListTypes = true
 )
 
-type List[T any] struct {
-	mu     *sync.RWMutex
+type listCore[T any] struct {
+	mu     sync.RWMutex
 	limit  *int
 	equal  func(a, b T) bool
 	values []T
+}
+
+type List[T any] struct {
+	*listCore[T]
 }
 
 func (lst *List[T]) Reverse() {
@@ -28,7 +33,7 @@ func (lst *List[T]) Reverse() {
 		return
 	}
 
-	lst.checkMu()
+	lst.init()
 
 	lst.mu.Lock()
 	slices.Reverse(lst.values)
@@ -40,7 +45,7 @@ func (lst *List[T]) RandomItem() *T {
 		return nil
 	}
 
-	lst.checkMu()
+	lst.init()
 
 	lst.mu.RLock()
 	randomItem := GetRandomItem(lst.values)
@@ -63,7 +68,7 @@ func (lst *List[T]) SetEqual(fn func(a, b T) bool) *List[T] {
 		return nil
 	}
 
-	lst.checkMu()
+	lst.init()
 
 	lst.mu.Lock()
 	lst.equal = fn
@@ -77,7 +82,7 @@ func (lst *List[T]) SetLimit(limit int) *List[T] {
 		return nil
 	}
 
-	lst.checkMu()
+	lst.init()
 
 	lst.mu.Lock()
 	lst.limit = &limit
@@ -92,12 +97,13 @@ func (lst *List[T]) Contains(value T) bool {
 		return false
 	}
 
-	lst.checkMu()
+	lst.init()
 
 	lst.mu.RLock()
 
 	for i := range lst.values {
-		if reflect.DeepEqual(lst.values[i], value) {
+		if (lst.equal != nil && lst.equal(lst.values[i], value)) ||
+			reflect.DeepEqual(lst.values[i], value) {
 			lst.mu.RUnlock()
 			return true
 		}
@@ -113,7 +119,7 @@ func (lst *List[T]) Last() (T, bool) {
 		return empty, false
 	}
 
-	lst.checkMu()
+	lst.init()
 
 	lst.mu.RLock()
 
@@ -130,7 +136,7 @@ func (lst *List[T]) Last() (T, bool) {
 
 func (lst *List[T]) GetIndex(index int) (T, bool) {
 	if lst != nil {
-		lst.checkMu()
+		lst.init()
 		lst.mu.RLock()
 		if index >= 0 && index < len(lst.values) {
 			lst.mu.RUnlock()
@@ -151,7 +157,7 @@ func (lst *List[T]) Length() int {
 		return 0
 	}
 
-	lst.checkMu()
+	lst.init()
 
 	lst.mu.RLock()
 	length := len(lst.values)
@@ -164,7 +170,7 @@ func (lst *List[T]) Sort(fn func(i, j T) bool) {
 		return
 	}
 
-	lst.checkMu()
+	lst.init()
 
 	lst.mu.Lock()
 	sort.Slice(lst.values, func(i, j int) bool {
@@ -178,7 +184,7 @@ func (lst *List[T]) GetListClear() (values []T) {
 		return []T{}
 	}
 
-	lst.checkMu()
+	lst.init()
 	lst.mu.Lock()
 	values = append(values, lst.values...)
 	lst.values = []T{}
@@ -191,7 +197,7 @@ func (lst *List[T]) Join(sep string) string {
 		return ""
 	}
 
-	lst.checkMu()
+	lst.init()
 	lst.mu.RLock()
 
 	var v []string
@@ -203,12 +209,24 @@ func (lst *List[T]) Join(sep string) string {
 	return strings.Join(v, sep)
 }
 
+func (lst *List[T]) RawList() (values []T) {
+	if lst == nil {
+		return []T{}
+	}
+
+	lst.init()
+	lst.mu.RLock()
+	values = lst.values
+	lst.mu.RUnlock()
+	return values
+}
+
 func (lst *List[T]) GetList() (values []T) {
 	if lst == nil {
 		return []T{}
 	}
 
-	lst.checkMu()
+	lst.init()
 	lst.mu.RLock()
 	values = append(values, lst.values...)
 	lst.mu.RUnlock()
@@ -220,7 +238,7 @@ func (lst *List[T]) Collect(fn func(T) bool) (values []T) {
 		return []T{}
 	}
 
-	lst.checkMu()
+	lst.init()
 	lst.mu.RLock()
 
 	for i := range lst.values {
@@ -237,7 +255,7 @@ func (lst *List[T]) AppendFunc(value T, fn func(item T) (exists bool)) (added bo
 	if lst == nil {
 		return false
 	}
-	lst.checkMu()
+	lst.init()
 	lst.mu.Lock()
 
 	if slices.ContainsFunc(lst.values, fn) {
@@ -276,7 +294,7 @@ func (lst *List[T]) AppendUnique(value T) bool {
 		return false
 	}
 
-	lst.checkMu()
+	lst.init()
 
 	if lst.equal == nil {
 		return lst.appendDeepEqual(value)
@@ -303,7 +321,7 @@ func (lst *List[T]) ContainsFunc(fn func(value T) bool) bool {
 		return false
 	}
 
-	lst.checkMu()
+	lst.init()
 
 	lst.mu.RLock()
 	defer lst.mu.RUnlock()
@@ -316,7 +334,7 @@ func (lst *List[T]) DeleteFuncList(fn func(value T) bool) []T {
 		return nil
 	}
 
-	lst.checkMu()
+	lst.init()
 
 	lst.mu.Lock()
 	defer lst.mu.Unlock()
@@ -343,7 +361,7 @@ func (lst *List[T]) DeleteFunc(fn func(value T) bool) bool {
 		return false
 	}
 
-	lst.checkMu()
+	lst.init()
 
 	lst.mu.Lock()
 	defer lst.mu.Unlock()
@@ -355,12 +373,11 @@ func (lst *List[T]) DeleteFunc(fn func(value T) bool) bool {
 }
 
 func (lst *List[T]) Remove(value T) []T {
-	if lst == nil {
-		return []T{}
-	}
-
-	return lst.DeleteFuncList(func(value T) bool {
-		return reflect.DeepEqual(value, value)
+	return lst.DeleteFuncList(func(v T) bool {
+		if lst.equal != nil {
+			return lst.equal(v, value)
+		}
+		return reflect.DeepEqual(v, value)
 	})
 }
 
@@ -369,7 +386,7 @@ func (lst *List[T]) Modify(fn func(value *T) bool) []T {
 		return nil
 	}
 
-	lst.checkMu()
+	lst.init()
 
 	lst.mu.Lock()
 
@@ -391,7 +408,7 @@ func (lst *List[T]) Insert(index int, values ...T) {
 		return
 	}
 
-	lst.checkMu()
+	lst.init()
 
 	lst.mu.Lock()
 
@@ -411,7 +428,7 @@ func (lst *List[T]) Append(values ...T) {
 		return
 	}
 
-	lst.checkMu()
+	lst.init()
 
 	lst.mu.Lock()
 	lst.values = append(lst.values, values...)
@@ -423,7 +440,7 @@ func (lst *List[T]) SetList(values []T) {
 	if lst == nil {
 		return
 	}
-	lst.checkMu()
+	lst.init()
 
 	lst.mu.Lock()
 	lst.values = values
@@ -435,7 +452,7 @@ func (lst *List[T]) Clear() {
 	if lst == nil {
 		return
 	}
-	lst.checkMu()
+	lst.init()
 
 	lst.mu.Lock()
 	lst.values = []T{}
@@ -443,7 +460,7 @@ func (lst *List[T]) Clear() {
 }
 
 func (lst *List[T]) IsZero() bool {
-	lst.checkMu()
+	lst.init()
 
 	lst.mu.RLock()
 	defer lst.mu.RUnlock()
@@ -452,7 +469,7 @@ func (lst *List[T]) IsZero() bool {
 }
 
 func (lst List[T]) MarshalJSON() ([]byte, error) {
-	lst.checkMu()
+	lst.init()
 
 	lst.mu.Lock()
 	defer lst.mu.Unlock()
@@ -465,7 +482,7 @@ func (lst *List[T]) UnmarshalJSON(data []byte) error {
 		return nil
 	}
 
-	lst.checkMu()
+	lst.init()
 
 	lst.mu.Lock()
 	defer lst.mu.Unlock()
@@ -484,13 +501,12 @@ func (lst *List[T]) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func (lst *List[T]) checkMu() {
-	if lst.mu == nil {
-		checkMu.Lock()
-		if lst.mu == nil {
-			lst.mu = &sync.RWMutex{}
-		}
-		checkMu.Unlock()
+func (lst *List[T]) init() {
+	addr := (*unsafe.Pointer)(unsafe.Pointer(&lst.listCore))
+	core := atomic.LoadPointer(addr)
+
+	if core == nil {
+		atomic.CompareAndSwapPointer(addr, nil, unsafe.Pointer(newListCore[T]()))
 	}
 }
 
@@ -502,9 +518,14 @@ func GetRandomItem[T any](lst []T) *T {
 	return &lst[rand.Intn(len(lst))]
 }
 
+func newListCore[T any](values ...T) *listCore[T] {
+	return &listCore[T]{
+		values: values,
+	}
+}
+
 func NewList[T any](values ...T) *List[T] {
 	return &List[T]{
-		values: values,
-		mu:     &sync.RWMutex{},
+		listCore: newListCore(values...),
 	}
 }
