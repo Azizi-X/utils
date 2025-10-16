@@ -7,12 +7,20 @@ type String struct {
 	atomic.Value
 }
 
+func NewString(v string) *String {
+	str := &String{}
+	if val != "" {
+		str.Store(v)
+	}
+	return str
+}
+
 func (str *String) Load() string {
 	return unpackString(str.Value.Load())
 }
 
-func (str *String) Store(val string) {
-	str.Value.Store(packString(val))
+func (str *String) Store(v string) {
+	str.Value.Store(packString(v))
 }
 
 func (str *String) CompareAndSwap(old, new string) (swapped bool) {
@@ -27,6 +35,6 @@ func (str *String) CompareAndSwap(old, new string) (swapped bool) {
 	return false
 }
 
-func (str *String) Swap(val string) (old string) {
-	return unpackString(str.Value.Swap(packString(val)))
+func (str *String) Swap(v string) (old string) {
+	return unpackString(str.Value.Swap(packString(v)))
 }
