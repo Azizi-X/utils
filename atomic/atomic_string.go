@@ -2,20 +2,20 @@ package atomic
 
 import "sync/atomic"
 
-type AtomicString struct {
+type String struct {
 	_ nocmp
 	atomic.Value
 }
 
-func (str *AtomicString) Load() string {
+func (str *String) Load() string {
 	return unpackString(str.Value.Load())
 }
 
-func (str *AtomicString) Store(val string) {
+func (str *String) Store(val string) {
 	str.Value.Store(packString(val))
 }
 
-func (str *AtomicString) CompareAndSwap(old, new string) (swapped bool) {
+func (str *String) CompareAndSwap(old, new string) (swapped bool) {
 	if str.Value.CompareAndSwap(packString(old), packString(new)) {
 		return true
 	}
@@ -27,6 +27,6 @@ func (str *AtomicString) CompareAndSwap(old, new string) (swapped bool) {
 	return false
 }
 
-func (str *AtomicString) Swap(val string) (old string) {
+func (str *String) Swap(val string) (old string) {
 	return unpackString(str.Value.Swap(packString(val)))
 }
