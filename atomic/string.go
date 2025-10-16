@@ -9,7 +9,7 @@ type String struct {
 
 func NewString(v string) *String {
 	str := &String{}
-	if val != "" {
+	if v != "" {
 		str.Store(v)
 	}
 	return str
