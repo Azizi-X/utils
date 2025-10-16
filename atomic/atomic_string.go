@@ -2,8 +2,6 @@ package atomic
 
 import "sync/atomic"
 
-type nocmp [0]func()
-
 type AtomicString struct {
 	_ nocmp
 	atomic.Value
@@ -39,13 +37,4 @@ func (str *AtomicString) CompareAndSwap(old, new string) (swapped bool) {
 
 func (str *AtomicString) Swap(val string) (old string) {
 	return unpackString(str.Value.Swap(packString(val)))
-}
-
-func packString(s string) any {
-	return s
-}
-
-func unpackString(v any) string {
-	s, _ := v.(string)
-	return s
 }
