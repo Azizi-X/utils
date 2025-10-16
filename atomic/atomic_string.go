@@ -7,14 +7,6 @@ type AtomicString struct {
 	atomic.Value
 }
 
-func NewString(val string) *AtomicString {
-	str := &AtomicString{}
-	if val != "" {
-		str.Store(val)
-	}
-	return str
-}
-
 func (str *AtomicString) Load() string {
 	return unpackString(str.Value.Load())
 }
