@@ -2,6 +2,6 @@ package atomic
 
 import "sync/atomic"
 
-type AtomicInt struct {
+type Int struct {
 	atomic.Int64
 }
