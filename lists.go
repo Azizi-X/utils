@@ -233,6 +233,26 @@ func (lst *List[T]) GetList() (values []T) {
 	return
 }
 
+func (lst *List[T]) GetFunc(fn func(T) bool) (T, bool) {
+	if lst == nil {
+		var empty T
+		return empty, false
+	}
+
+	core := lst.init()
+	core.mu.RLock()
+	for i := range core.values {
+		if fn(core.values[i]) {
+			core.mu.RUnlock()
+			return core.values[i], true
+		}
+	}
+
+	core.mu.RUnlock()
+	var empty T
+	return empty, false
+}
+
 func (lst *List[T]) Collect(fn func(T) bool) (values []T) {
 	if lst == nil {
 		return []T{}
@@ -381,6 +401,34 @@ func (lst *List[T]) Remove(value T) []T {
 		}
 		return reflect.DeepEqual(v, value)
 	})
+}
+
+func (lst *List[T]) ReplaceFunc(fn func(value T) *T, new ...T) bool {
+	if lst == nil {
+		return false
+	}
+
+	core := lst.init()
+
+	core.mu.Lock()
+
+	var found bool
+
+	for i := range core.values {
+		if new := fn(core.values[i]); new != nil {
+			found = true
+			core.values[i] = *new
+		}
+	}
+
+	if !found {
+		core.values = append(core.values, new...)
+	}
+
+	core.checkLimit()
+	core.mu.Unlock()
+
+	return found
 }
 
 func (lst *List[T]) Modify(fn func(value *T) bool) []T {
