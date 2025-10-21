@@ -15,7 +15,9 @@ type EvictingMap[K comparable, V any] struct {
 }
 
 func (rd *EvictingMap[K, V]) Add(id K, value V) {
-	rd.Broadcaster.Broadcast(id)
+	if rd.Broadcaster != nil {
+		rd.Broadcaster.Broadcast(id)
+	}
 
 	rd.mu.Lock()
 	if _, exists := rd.values[id]; !exists {
@@ -45,27 +47,6 @@ func (rd *EvictingMap[K, V]) Remove(item K) {
 	rd.mu.Unlock()
 }
 
-func (rd *EvictingMap[K, V]) Replace(id K, value V) {
-	rd.Broadcaster.Broadcast(id)
-
-	rd.mu.Lock()
-	_, exists := rd.values[id]
-
-	if rd.allowFunc != nil && !rd.allowFunc(id, value) {
-		rd.mu.Unlock()
-		return
-	}
-
-	if !exists {
-		rd.order = append(rd.order, id)
-	}
-
-	rd.values[id] = value
-	rd.evictItems()
-
-	rd.mu.Unlock()
-}
-
 func (rd *EvictingMap[K, V]) Get(item K) (V, bool) {
 	rd.mu.RLock()
 	value, exists := rd.values[item]
@@ -75,15 +56,13 @@ func (rd *EvictingMap[K, V]) Get(item K) (V, bool) {
 
 func (rd *EvictingMap[K, V]) Clear() {
 	rd.mu.Lock()
-	defer rd.mu.Unlock()
-
 	rd.values = make(map[K]V)
 	rd.order = rd.order[:0]
+	rd.mu.Unlock()
 }
 
 func (rd *EvictingMap[K, V]) Items() []V {
 	rd.mu.RLock()
-	defer rd.mu.RUnlock()
 
 	result := make([]V, 0, len(rd.order))
 	for _, key := range rd.order {
@@ -91,6 +70,8 @@ func (rd *EvictingMap[K, V]) Items() []V {
 			result = append(result, val)
 		}
 	}
+
+	rd.mu.RUnlock()
 	return result
 }
 
@@ -153,6 +134,11 @@ func (rd *EvictingMap[K, V]) evictItems() {
 	}
 }
 
+func (rd *EvictingMap[K, V]) WithBroadcaster() *EvictingMap[K, V] {
+	rd.Broadcaster = NewBroadcaster[K]()
+	return rd
+}
+
 func NewEvictingMap[K comparable, V any](max int) *EvictingMap[K, V] {
-	return &EvictingMap[K, V]{values: map[K]V{}, max: max, Broadcaster: NewBroadcaster[K]()}
+	return &EvictingMap[K, V]{values: map[K]V{}, max: max}
 }

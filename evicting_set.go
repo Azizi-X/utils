@@ -15,12 +15,13 @@ type EvictingSet[T comparable] struct {
 }
 
 func (rd *EvictingSet[T]) Add(id T) {
-	rd.Broadcaster.Broadcast(id)
+	if rd.Broadcaster != nil {
+		rd.Broadcaster.Broadcast(id)
+	}
 
 	rd.mu.Lock()
 
 	if _, exists := rd.values[id]; !exists {
-
 		if rd.allowFunc != nil && !rd.allowFunc(id) {
 			rd.mu.Unlock()
 			return
@@ -111,6 +112,11 @@ func (rd *EvictingSet[T]) evictItems() {
 	}
 }
 
+func (d *EvictingSet[T]) WithBroadcaster() *EvictingSet[T] {
+	d.Broadcaster = NewBroadcaster[T]()
+	return d
+}
+
 func NewEvictingSet[T comparable](max int) *EvictingSet[T] {
-	return &EvictingSet[T]{values: map[T]struct{}{}, max: max, Broadcaster: NewBroadcaster[T]()}
+	return &EvictingSet[T]{values: map[T]struct{}{}, max: max}
 }
