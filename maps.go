@@ -89,9 +89,26 @@ func (mp *Map[T]) ContainsFunc(fn func(T) bool) bool {
 	return false
 }
 
+func (mp *Map[T]) GetKeys() (keys []string) {
+	if mp == nil {
+		return nil
+	}
+
+	core := mp.init()
+
+	core.mu.RLock()
+
+	for key := range core.values {
+		keys = append(keys, key)
+	}
+
+	core.mu.RUnlock()
+	return
+}
+
 func (mp *Map[T]) GetList(clear ...bool) (lst []T) {
 	if mp == nil {
-		return []T{}
+		return nil
 	}
 
 	core := mp.init()
@@ -119,7 +136,7 @@ func (mp *Map[T]) GetList(clear ...bool) (lst []T) {
 
 func (mp *Map[T]) GetListAndMap() (lst []T, mapList map[string]T) {
 	if mp == nil {
-		return []T{}, map[string]T{}
+		return nil, map[string]T{}
 	}
 
 	core := mp.init()
