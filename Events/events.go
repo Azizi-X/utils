@@ -1,118 +1,65 @@
 package Events
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"sync/atomic"
+	"unsafe"
 )
 
-var generated atomic.Uint64
+var ErrCanceled = errors.New("context canceled")
 
-type eventInter interface {
-	Run(args ...any)
+type Key string
+
+type eventInter[T any] interface {
+	Run(args T)
+}
+
+type Event[T any, Z eventInter[T]] struct {
+	Name      string
+	Callbacks atomic.Pointer[[]callback[T, Z]]
+}
+
+type callback[T any, Z eventInter[T]] struct {
+	Callback Z
+	Ctx      ctxInter
+	Keys     []Key
 }
 
 type ctxInter interface {
 	Alive() bool
-	C() <-chan struct{}
-	CancelWithReason(reason string)
-	Cancel()
+	Wait() bool
+	CancelWithErr(error)
 }
 
-type Key string
-
-type Event[T any] struct {
-	Name      string
-	Callbacks atomic.Pointer[[]callback]
+type Sync struct {
+	ctxInter
 }
 
-type callback struct {
-	Fn   eventInter
-	Keys []Key
-	Ctx  ctxInter
+func New[T any, Z eventInter[T]](name string) *Event[T, Z] {
+	event := &Event[T, Z]{
+		Name: name,
+	}
+
+	initial := make([]callback[T, Z], 0)
+	event.Callbacks.Store(&initial)
+
+	return event
 }
 
-type Sync[T any] struct {
-	*Event[T]
-	Ctx ctxInter
-}
-
-func (s Sync[T]) Wait() {
-	<-s.Ctx.C()
-}
-
-func (cb *callback) Alive() bool {
+func (cb *callback[T, Z]) Alive() bool {
 	return cb.Ctx == nil || cb.Ctx.Alive()
 }
 
-func GenKey() Key {
-	return Key(fmt.Sprintf("%d", generated.Add(1)))
+func (cb *callback[T, Z]) isNil() bool {
+	return (*struct {
+		Type *struct{}
+	})(unsafe.Pointer(&cb.Callback)).Type == nil
 }
 
-func (event *Event[T]) Remove(keys ...Key) {
-	event.remove(nil, keys...)
-}
-
-func (event *Event[T]) RemoveCtx(ctx ctxInter, keys ...Key) {
-	event.remove(ctx, keys...)
-}
-
-func (event *Event[T]) remove(ctx ctxInter, keys ...Key) {
-	if ctx != nil {
-		ctx.CancelWithReason("context canceled")
-	}
-
-	for {
-		old := event.Callbacks.Load()
-
-		updated := slices.DeleteFunc(*old, func(callback callback) bool {
-			return (len(keys) > 0 && slices.Equal(callback.Keys, keys)) || (callback.Ctx != nil && callback.Ctx == ctx)
-		})
-
-		if event.Callbacks.CompareAndSwap(old, &updated) {
-			break
-		}
-	}
-}
-
-func (event *Event[T]) SubscribeCtx(fn T, ctx ctxInter, keys ...Key) Sync[T] {
-	event.addCallback(newCallback(fn, ctx, keys...))
-
-	go func() {
-		<-ctx.C()
-		event.RemoveCtx(ctx, keys...)
-	}()
-
-	return Sync[T]{event, ctx}
-}
-
-func (event *Event[T]) Subscribe(fn T, keys ...Key) {
-	event.addCallback(newCallback(fn, nil, keys...))
-}
-
-func (event *Event[T]) addCallback(callback callback) {
-	for {
-		old := event.Callbacks.Load()
-		new := append(slices.Clone(*old), callback)
-
-		if event.Callbacks.CompareAndSwap(old, &new) {
-			break
-		}
-	}
-}
-
-func (event *Event[T]) Publish(args ...any) {
-	callbacks := *event.Callbacks.Load()
-	for i := range callbacks {
-		if !callbacks[i].Alive() {
-			continue
-		}
-		callbacks[i].Fn.Run(args...)
-	}
-}
-
-func (event *Event[T]) Clone() *Event[T] {
-	new := &Event[T]{
+func (event *Event[T, Z]) Clone() *Event[T, Z] {
+	new := &Event[T, Z]{
 		Name: event.Name,
 	}
 
@@ -123,22 +70,98 @@ func (event *Event[T]) Clone() *Event[T] {
 	return new
 }
 
-func newCallback(fn any, ctx ctxInter, keys ...Key) callback {
-	return callback{
-		Fn:   fn.(eventInter),
-		Keys: keys,
-		Ctx:  ctx,
+func (e *Event[T, Z]) Subscribe(fn Z, keys ...Key) {
+	e.SubscribeIdx(fn, -1, keys...)
+}
+
+func (e *Event[T, Z]) SubscribeIdx(fn Z, idx int, keys ...Key) {
+	e.addCallback(idx, fn, nil, keys...)
+}
+
+func (e *Event[T, Z]) SubscribeCtx(fn Z, ctx ctxInter, keys ...Key) Sync {
+	e.addCallback(-1, fn, ctx, keys...)
+
+	go func() {
+		ctx.Wait()
+		e.removeCtx(ctx, keys...)
+	}()
+
+	return Sync{ctx}
+}
+
+func (e *Event[T, Z]) Remove(keys ...Key) {
+	e.removeCtx(nil, keys...)
+}
+
+func (e *Event[T, Z]) removeCtx(ctx ctxInter, keys ...Key) {
+	e.removeCallback(ctx, keys...)
+}
+
+func (e *Event[T, Z]) addCallback(idx int, fn Z, ctx ctxInter, keys ...Key) {
+	cb := callback[T, Z]{fn, ctx, keys}
+
+	if cb.isNil() {
+		panic(fmt.Errorf("Subscribe can not be: %v", fn))
+	}
+
+	for {
+		oldPtr := e.Callbacks.Load()
+		oldSlice := *oldPtr
+
+		if idx == -1 {
+			idx = len(oldSlice)
+		}
+
+		if idx < 0 || idx > len(oldSlice) {
+			panic("subscribe index out of bounds")
+		}
+
+		newSlice := make([]callback[T, Z], len(oldSlice)+1)
+		copy(newSlice[:idx], oldSlice[:idx])
+		newSlice[idx] = cb
+		copy(newSlice[idx+1:], oldSlice[idx:])
+
+		if e.Callbacks.CompareAndSwap(oldPtr, &newSlice) {
+			return
+		}
 	}
 }
 
-func New[T eventInter](name string) *Event[T] {
-	event := Event[T]{
-		Name: name,
+func (e *Event[T, Z]) removeCallback(ctx ctxInter, keys ...Key) {
+	if ctx != nil {
+		ctx.CancelWithErr(ErrCanceled)
 	}
 
-	initial := make([]callback, 0)
-	event.Callbacks.Store(&initial)
+	isMatch := func(cb callback[T, Z]) bool {
+		if len(keys) > 0 && slices.Equal(cb.Keys, keys) {
+			return true
+		} else if cb.Ctx != nil && cb.Ctx == ctx {
+			return true
+		}
+		return false
+	}
 
-	return &event
+	for {
+		oldPtr := e.Callbacks.Load()
+		oldSlice := *oldPtr
+
+		newSlice := slices.DeleteFunc(oldSlice, isMatch)
+
+		if len(newSlice) == len(oldSlice) {
+			return
+		}
+
+		if e.Callbacks.CompareAndSwap(oldPtr, &newSlice) {
+			break
+		}
+	}
 }
 
+func (e *Event[T, Z]) Publish(arg T) {
+	slice := *e.Callbacks.Load()
+	for i := range slice {
+		if slice[i].Alive() {
+			slice[i].Callback.Run(arg)
+		}
+	}
+}
