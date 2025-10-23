@@ -29,7 +29,7 @@ type callback[T any, Z eventInter[T]] struct {
 
 type ctxInter interface {
 	Alive() bool
-	Wait() bool
+	Wait()
 	CancelWithErr(error)
 }
 
@@ -165,3 +165,4 @@ func (e *Event[T, Z]) Publish(arg T) {
 		}
 	}
 }
+
