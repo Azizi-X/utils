@@ -25,6 +25,10 @@ func (w *Worker[T]) Send(v T) {
 }
 
 func NewWorker[T any](workers, buf int, fn func(T)) *Worker[T] {
+	if fn == nil {
+		panic("fn can not be nil")
+	}
+
 	ch := make(chan T, buf)
 
 	handler := Worker[T]{
