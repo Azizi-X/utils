@@ -27,6 +27,8 @@ func (w *Worker[T]) Send(v T) {
 func NewWorker[T any](workers, buf int, fn func(T)) *Worker[T] {
 	if fn == nil {
 		panic("fn can not be nil")
+	} else if workers <= 0 {
+		panic("workers must be greater than 0")
 	}
 
 	ch := make(chan T, buf)
