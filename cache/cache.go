@@ -10,6 +10,7 @@ import (
 )
 
 const (
+	NoLimit    cacheLimit    = -1
 	ResetTimer cacheOption   = 0
 	NoExpire   time.Duration = -1
 
@@ -22,14 +23,15 @@ const (
 )
 
 var (
-	CheckInterval time.Duration = 5000
-	MaxEntries    int           = 2000
+	DefaultCheckInterval time.Duration = 5000
+	DefaultCacheLimit    cacheLimit    = 2000
 
 	ErrCacheNotFound = fmt.Errorf("cache not found")
 	ErrCacheExpired  = fmt.Errorf("cache expired")
 )
 
 type cacheOption int
+type cacheLimit = int
 
 type cacheIter interface {
 	GetItems() [][]byte
@@ -78,10 +80,21 @@ type Cache[T any] struct {
 	mu        sync.RWMutex
 	Ctx       context.Context
 	lastCheck time.Time
+	Limit     int
 }
 
 func NewCache[T any](ctx context.Context) *Cache[T] {
-	return &Cache[T]{Items: map[string]cacheItem[T]{}, Ctx: ctx}
+	return &Cache[T]{Items: map[string]cacheItem[T]{}, Ctx: ctx, Limit: DefaultCacheLimit}
+}
+
+func (c *Cache[T]) SetLimit(limit int) *Cache[T] {
+	c.Limit = limit
+	return c
+}
+
+func (c *Cache[T]) Nolimit() *Cache[T] {
+	c.Limit = NoLimit
+	return c
 }
 
 func (c *Cache[T]) Keeper(keeper keeperIter) *Cache[T] {
@@ -246,7 +259,7 @@ func (c *Cache[T]) Length() int {
 func (c *Cache[T]) checkUnsafe() {
 	now := time.Now()
 
-	if time.Since(c.lastCheck) < CheckInterval {
+	if time.Since(c.lastCheck) < DefaultCheckInterval {
 		return
 	}
 
@@ -258,10 +271,12 @@ func (c *Cache[T]) checkUnsafe() {
 		}
 	}
 
-	for len(c.Items) > MaxEntries {
-		for key := range c.Items {
-			delete(c.Items, key)
-			break
+	if c.Limit != NoLimit {
+		for len(c.Items) > c.Limit {
+			for key := range c.Items {
+				delete(c.Items, key)
+				break
+			}
 		}
 	}
 }
@@ -271,4 +286,3 @@ func (c *Cache[T]) Check() {
 	defer c.mu.Unlock()
 	c.checkUnsafe()
 }
-
