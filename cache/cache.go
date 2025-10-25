@@ -83,8 +83,28 @@ type Cache[T any] struct {
 	Limit     int
 }
 
-func NewCache[T any](ctx context.Context) *Cache[T] {
-	return &Cache[T]{Items: map[string]cacheItem[T]{}, Ctx: ctx, Limit: DefaultCacheLimit}
+func NewCache[T any](ctx context.Context, cleanup ...bool) *Cache[T] {
+	c := &Cache[T]{Items: map[string]cacheItem[T]{}, Ctx: ctx, Limit: DefaultCacheLimit}
+
+	if len(cleanup) == 0 || cleanup[0] {
+		c.cleanupTask(1 * time.Minute)
+	}
+
+	return c
+}
+
+func (c *Cache[T]) cleanupTask(t time.Duration) *Cache[T] {
+	go func() {
+		for {
+			select {
+			case <-c.Ctx.Done():
+				return
+			case <-time.After(t):
+				c.Check()
+			}
+		}
+	}()
+	return c
 }
 
 func (c *Cache[T]) SetLimit(limit int) *Cache[T] {
