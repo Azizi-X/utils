@@ -65,7 +65,7 @@ func (ck *CacheKeeper) GetItems() (items [][][]byte) {
 		items = append(items, cache.GetItems())
 	}
 
-	return nil
+	return
 }
 
 type cacheItem[T any] struct {
@@ -306,3 +306,4 @@ func (c *Cache[T]) Check() {
 	defer c.mu.Unlock()
 	c.checkUnsafe()
 }
+
