@@ -108,12 +108,8 @@ func (e *Event[T, Z]) addCallback(idx int, fn Z, ctx ctxInter, keys ...Key) {
 		oldPtr := e.Callbacks.Load()
 		oldSlice := *oldPtr
 
-		if idx == -1 {
-			idx = len(oldSlice)
-		}
-
 		if idx < 0 || idx > len(oldSlice) {
-			panic("subscribe index out of bounds")
+			idx = len(oldSlice)
 		}
 
 		newSlice := make([]callback[T, Z], len(oldSlice)+1)
@@ -165,4 +161,3 @@ func (e *Event[T, Z]) Publish(arg T) {
 		}
 	}
 }
-
