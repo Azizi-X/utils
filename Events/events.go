@@ -141,7 +141,7 @@ func (e *Event[T, Z]) removeCallback(ctx ctxInter, keys ...Key) {
 		oldPtr := e.Callbacks.Load()
 		oldSlice := *oldPtr
 
-		newSlice := slices.DeleteFunc(oldSlice, isMatch)
+		newSlice := slices.DeleteFunc(slices.Clone(oldSlice), isMatch)
 
 		if len(newSlice) == len(oldSlice) {
 			return
