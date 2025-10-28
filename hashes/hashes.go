@@ -37,7 +37,7 @@ func UniqueCode(data any, length int) (string, error) {
 
 func hashStruct(hash hash.Hash, data any) error {
 	value := reflect.ValueOf(data)
-	if value.Kind() != reflect.Ptr {
+	if value.Kind() != reflect.Pointer {
 		return fmt.Errorf("hashStruct: value must be a pointer to a struct or slice of structs")
 	}
 
@@ -90,8 +90,12 @@ func hashSingleStruct(hash hash.Hash, value reflect.Value) error {
 			}
 		}
 
+		for field.Kind() == reflect.Pointer && !field.IsNil() {
+			field = field.Elem()
+		}
+
 		switch field.Kind() {
-		case reflect.Ptr, reflect.Slice, reflect.Map, reflect.Func:
+		case reflect.Slice, reflect.Map, reflect.Func:
 			continue
 		}
 
