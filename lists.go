@@ -3,6 +3,7 @@ package utils
 import (
 	"encoding/json"
 	"fmt"
+	"iter"
 	"math/rand"
 	"reflect"
 	"slices"
@@ -219,6 +220,27 @@ func (lst *List[T]) RawList() (values []T) {
 	values = core.values
 	core.mu.RUnlock()
 	return values
+}
+
+func (lst *List[T]) Backward() iter.Seq2[int, T] {
+	return func(yield func(int, T) bool) {
+		s := lst.GetList()
+		for i := len(s) - 1; i >= 0; i-- {
+			if !yield(i, s[i]) {
+				return
+			}
+		}
+	}
+}
+
+func (lst *List[T]) Iter() iter.Seq2[int, T] {
+	return func(yield func(int, T) bool) {
+		for i, v := range lst.GetList() {
+			if !yield(i, v) {
+				return
+			}
+		}
+	}
 }
 
 func (lst *List[T]) GetList() (values []T) {
