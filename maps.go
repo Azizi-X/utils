@@ -3,6 +3,7 @@ package utils
 import (
 	"encoding/json"
 	"fmt"
+	"iter"
 	"maps"
 	"sync"
 	"sync/atomic"
@@ -104,6 +105,26 @@ func (mp *Map[T]) GetKeys() (keys []string) {
 
 	core.mu.RUnlock()
 	return
+}
+
+func (mp *Map[T]) Keys(clear ...bool) iter.Seq[string] {
+	return func(yield func(string) bool) {
+		for k := range mp.GetMap(clear...) {
+			if !yield(k) {
+				return
+			}
+		}
+	}
+}
+
+func (mp *Map[T]) Values(clear ...bool) iter.Seq[T] {
+	return func(yield func(T) bool) {
+		for _, v := range mp.GetMap(clear...) {
+			if !yield(v) {
+				return
+			}
+		}
+	}
 }
 
 func (mp *Map[T]) GetList(clear ...bool) (lst []T) {
