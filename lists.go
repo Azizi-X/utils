@@ -233,16 +233,6 @@ func (lst *List[T]) Backward() iter.Seq2[int, T] {
 	}
 }
 
-func (lst *List[T]) Iter() iter.Seq2[int, T] {
-	return func(yield func(int, T) bool) {
-		for i, v := range lst.GetList() {
-			if !yield(i, v) {
-				return
-			}
-		}
-	}
-}
-
 func (lst *List[T]) GetList() (values []T) {
 	if lst == nil {
 		return []T{}
