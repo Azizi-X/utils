@@ -244,6 +244,15 @@ func (c *Cache[T]) setUnsafe(key string, data *T, err error, expires ...time.Dur
 	return err
 }
 
+
+func (c *Cache[T]) Clear() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.Items = make(map[string]cacheItem[T])
+	c.lastCheck = time.Now()
+}
+
 func (c *Cache[T]) Remove(key string) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -306,4 +315,5 @@ func (c *Cache[T]) Check() {
 	defer c.mu.Unlock()
 	c.checkUnsafe()
 }
+
 
