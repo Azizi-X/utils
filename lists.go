@@ -533,8 +533,8 @@ func (lst *List[T]) IsZero() bool {
 func (lst List[T]) MarshalJSON() ([]byte, error) {
 	core := lst.init()
 
-	core.mu.Lock()
-	defer core.mu.Unlock()
+	core.mu.RLock()
+	defer core.mu.RUnlock()
 
 	return json.Marshal(core.values)
 }
@@ -595,3 +595,4 @@ func NewList[T any](values ...T) *List[T] {
 		rawCore: newListCore(values...),
 	}
 }
+
