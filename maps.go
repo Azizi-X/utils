@@ -359,8 +359,8 @@ func (mp *Map[T]) Clear() {
 func (mp Map[T]) MarshalJSON() ([]byte, error) {
 	core := mp.init()
 
-	core.mu.Lock()
-	defer core.mu.Unlock()
+	core.mu.RLock()
+	defer core.mu.RUnlock()
 
 	return json.Marshal(core.values)
 }
@@ -430,3 +430,4 @@ func NewMapInit[T any](values map[string]T) *Map[T] {
 	}
 	return newMap
 }
+
