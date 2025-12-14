@@ -36,6 +36,15 @@ func UniqueCode(data any, length int) (string, error) {
 	return strings.ReplaceAll(code, "_", ""), nil
 }
 
+func UniqueNumericCode(data any, length int) (string, error) {
+	hash, err := UniqueCode(data, length*2)
+	if err != nil {
+		return "", err
+	}
+
+	return ShortNumericHash(hash, length), nil
+}
+
 func hashStruct(hash hash.Hash, data any) error {
 	value := reflect.ValueOf(data)
 	if value.Kind() != reflect.Pointer {
