@@ -278,11 +278,11 @@ func (mp *Map[T]) GetSet(key string, value T) (T, bool) {
 	core := mp.init()
 
 	core.mu.Lock()
-	_, exists := core.values[key]
+	v, exists := core.values[key]
 	if !exists {
 		core.values[key] = value
+		v = value
 	}
-	v := core.values[key]
 	core.mu.Unlock()
 	return v, exists
 }
@@ -312,6 +312,10 @@ func (mp *Map[T]) DeleteFunc(fn func(key string, value T) bool) mapValuesList[T]
 }
 
 func (mp *Map[T]) Remove(key string) *T {
+	return mp.RemoveCond(key, nil)
+}
+
+func (mp *Map[T]) RemoveCond(key string, cond func(T) bool) *T {
 	if mp == nil {
 		return nil
 	}
@@ -320,7 +324,11 @@ func (mp *Map[T]) Remove(key string) *T {
 
 	core.mu.Lock()
 	v, exists := core.values[key]
-	delete(core.values, key)
+	exists = exists && (cond == nil || cond(v))
+
+	if exists {
+		delete(core.values, key)
+	}
 	core.mu.Unlock()
 
 	if exists {
