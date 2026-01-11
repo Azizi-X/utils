@@ -36,6 +36,11 @@ func (rd *EvictingMap[K, V]) Add(id K, value V) {
 	rd.mu.Unlock()
 }
 
+func (rd *EvictingMap[K, V]) Replace(id K, value V) {
+	rd.Remove(id)
+	rd.Add(id, value)
+}
+
 func (rd *EvictingMap[K, V]) Remove(item K) {
 	rd.mu.Lock()
 

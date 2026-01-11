@@ -338,15 +338,28 @@ func (mp *Map[T]) RemoveCond(key string, cond func(T) bool) *T {
 	return nil
 }
 
-func (mp *Map[T]) Modify(fn func(mp *map[string]T)) {
+func (mp *Map[T]) Modify(fn func(value *T) bool) mapValuesList[T] {
 	if mp == nil {
-		return
+		return nil
 	}
 	core := mp.init()
 
 	core.mu.Lock()
-	fn(&core.values)
+
+	var modified mapValuesList[T]
+	for key := range core.values {
+		value := core.values[key]
+		if fn(&value) {
+			core.values[key] = value
+			modified = append(modified, mapValues[T]{
+				Key:   key,
+				Value: value,
+			})
+		}
+	}
 	core.mu.Unlock()
+
+	return modified
 }
 
 func (core *mapCore[T]) clearUnsafe() {

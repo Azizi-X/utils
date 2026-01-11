@@ -3,6 +3,7 @@ package hashes
 import (
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"hash"
 	"hash/crc32"
@@ -59,7 +60,7 @@ func hashStruct(hash hash.Hash, data any) error {
 	case reflect.Slice:
 		for i := 0; i < value.Len(); i++ {
 			item := value.Index(i)
-			if item.Kind() == reflect.Ptr {
+			if item.Kind() == reflect.Pointer {
 				item = item.Elem()
 			}
 			if item.Kind() != reflect.Struct {
@@ -109,9 +110,23 @@ func hashSingleStruct(hash hash.Hash, value reflect.Value) error {
 			continue
 		}
 
+		var value string
+
+		if field.CanInterface() {
+			if m, ok := field.Interface().(json.Marshaler); ok {
+				if b, err := m.MarshalJSON(); err == nil {
+					value = string(b)
+				}
+			}
+		}
+
+		if value == "" {
+			value = fmt.Sprintf("%v", field.Interface())
+		}
+
 		fields = append(fields, fieldData{
 			Name:  fieldType.Name,
-			Value: fmt.Sprintf("%v", field.Interface()),
+			Value: value,
 		})
 	}
 
@@ -140,7 +155,7 @@ func ShortNumericHash(input string, length int) string {
 	hash := h.Sum64()
 
 	mod := uint64(1)
-	for i := 0; i < length; i++ {
+	for range length {
 		mod *= 10
 	}
 

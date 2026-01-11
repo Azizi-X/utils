@@ -459,7 +459,6 @@ func (lst *List[T]) Modify(fn func(value *T) bool) []T {
 		}
 	}
 
-	core.checkLimit()
 	core.mu.Unlock()
 
 	return modified
