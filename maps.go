@@ -217,6 +217,25 @@ func (mp *Map[T]) Set(key string, value T, conds ...func(length int) (set bool, 
 	return exists
 }
 
+func (mp *Map[T]) SetUniqueFn(key string, fn func(exists bool) (T, bool)) bool {
+	if mp == nil {
+		return false
+	}
+
+	core := mp.init()
+
+	core.mu.Lock()
+	_, exists := core.values[key]
+
+	value, ok := fn(exists)
+
+	if !exists && ok {
+		core.values[key] = value
+	}
+	core.mu.Unlock()
+	return !exists
+}
+
 func (mp *Map[T]) SetUnique(key string, value T) bool {
 	if mp == nil {
 		return false
@@ -269,6 +288,33 @@ func (mp *Map[T]) GetFrom(keys ...string) (T, bool) {
 	return empty, false
 }
 
+func (mp *Map[T]) GetSetFn(key string, fn func() T, conds ...func(T) bool) (T, bool) {
+	if mp == nil {
+		var empty T
+		return empty, false
+	}
+
+	core := mp.init()
+
+	core.mu.Lock()
+	v, exists := core.values[key]
+	if !exists {
+		v = fn()
+		core.values[key] = v
+	}
+
+	for _, cond := range conds {
+		if !cond(v) {
+			core.mu.Unlock()
+			var empty T
+			return empty, false
+		}
+	}
+
+	core.mu.Unlock()
+	return v, exists
+}
+
 func (mp *Map[T]) GetSet(key string, value T) (T, bool) {
 	if mp == nil {
 		var empty T
@@ -280,8 +326,8 @@ func (mp *Map[T]) GetSet(key string, value T) (T, bool) {
 	core.mu.Lock()
 	v, exists := core.values[key]
 	if !exists {
-		core.values[key] = value
 		v = value
+		core.values[key] = v
 	}
 	core.mu.Unlock()
 	return v, exists

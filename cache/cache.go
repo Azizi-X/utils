@@ -135,28 +135,31 @@ func (c *Cache[T]) Exists(key string, options ...cacheOption) bool {
 	return v != nil
 }
 
-func (c *Cache[T]) ExistsSet(key string, data T, expires time.Duration, options ...cacheOption) bool {
-	return c.GetSet(key, data, expires, options...) != nil
+func (c *Cache[T]) UniqueSet(key string, data T, expires time.Duration, options ...cacheOption) bool {
+	c.mu.Lock()
+	_, already_set := c.getSetUnsafe(key, data, expires, options...)
+	c.mu.Unlock()
+	return !already_set
 }
 
 func (c *Cache[T]) GetSet(key string, data T, expires time.Duration, options ...cacheOption) *T {
 	c.mu.Lock()
-	v := c.getSetUnsafe(key, data, expires, options...)
+	v, _ := c.getSetUnsafe(key, data, expires, options...)
 	c.mu.Unlock()
 	return v
 }
 
-func (c *Cache[T]) getSetUnsafe(key string, data T, expires time.Duration, options ...cacheOption) *T {
+func (c *Cache[T]) getSetUnsafe(key string, data T, expires time.Duration, options ...cacheOption) (*T, bool) {
 	v, err := c.getUnsafe(key, options...)
 	if v != nil && err != nil {
-		return nil
+		return nil, false
 	} else if v != nil {
-		return &v.Value
+		return &v.Value, true
 	}
 
 	c.setUnsafe(key, &data, nil, expires)
 
-	return nil
+	return &data, false
 }
 
 func (c *Cache[T]) Get(key string, options ...cacheOption) *T {
