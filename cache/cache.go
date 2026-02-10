@@ -11,6 +11,7 @@ import (
 
 const (
 	ResetTimer cacheOption = iota
+	ResetTimerOnErr
 
 	NoLimit           cacheLimit = -1
 	DefaultCacheLimit cacheLimit = 2000
@@ -219,16 +220,13 @@ func (c *Cache[T]) getUnsafe(key string, options ...cacheOption) (*cacheItem[T],
 		return nil, ErrCacheExpired
 	}
 
-	if item.Err != nil {
-		return &item, item.Err
-	}
-
-	if slices.Contains(options, ResetTimer) {
+	if (slices.Contains(options, ResetTimer) && item.Err == nil) ||
+		(item.Err != nil && slices.Contains(options, ResetTimerOnErr)) {
 		item.Expires = time.Now().Add(item.Duration)
 		c.Items[key] = item
 	}
 
-	return &item, nil
+	return &item, item.Err
 }
 
 func (c *Cache[T]) setUnsafe(key string, data *T, err error, expires ...time.Duration) {
