@@ -6,15 +6,19 @@ type Worker[T any] struct {
 	ch   chan T
 	fn   func(T)
 	once sync.Once
+	wg   sync.WaitGroup
 }
 
 func (w *Worker[T]) Close() {
 	w.once.Do(func() {
 		close(w.ch)
+		w.wg.Wait()
 	})
 }
 
 func (w *Worker[T]) Worker() {
+	defer w.wg.Done()
+
 	for event := range w.ch {
 		w.fn(event)
 	}
@@ -37,6 +41,8 @@ func NewWorker[T any](workers, buf int, fn func(T)) *Worker[T] {
 		ch: ch,
 		fn: fn,
 	}
+
+	handler.wg.Add(workers)
 
 	for range workers {
 		go handler.Worker()
