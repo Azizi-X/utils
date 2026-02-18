@@ -9,3 +9,7 @@ type Int struct {
 type Int32 struct {
 	atomic.Int32
 }
+
+type Uint64 struct {
+	atomic.Uint64
+}
