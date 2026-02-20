@@ -1,6 +1,6 @@
 module github.com/Azizi-X/utils
 
-go 1.24.1
+go 1.26
 
 require github.com/shirou/gopsutil v2.21.11+incompatible
 
