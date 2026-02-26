@@ -10,11 +10,38 @@ import (
 	"hash/fnv"
 	"reflect"
 	"strings"
+	"sync"
+)
+
+var (
+	SafeHasher = newSafeHasher()
 )
 
 type fieldData struct {
 	Name  string
 	Value string
+}
+
+type safeHasher struct {
+	hasher hash.Hash64
+	mu     sync.Mutex
+}
+
+func (sh *safeHasher) Hash(input string) uint64 {
+	sh.mu.Lock()
+	defer func() {
+		sh.hasher.Reset()
+		sh.mu.Unlock()
+	}()
+
+	sh.hasher.Write([]byte(input))
+	return sh.hasher.Sum64()
+}
+
+func newSafeHasher() *safeHasher {
+	return &safeHasher{
+		hasher: fnv.New64a(),
+	}
 }
 
 func UniqueCode(data any, length int) (string, error) {
@@ -150,9 +177,7 @@ func ShortHash(input string, length int) string {
 }
 
 func ShortNumericHash(input string, length int) string {
-	h := fnv.New64a()
-	h.Write([]byte(input))
-	hash := h.Sum64()
+	hash := SafeHasher.Hash(input)
 
 	mod := uint64(1)
 	for range length {

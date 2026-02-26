@@ -357,13 +357,14 @@ func (mp *Map[K, V]) DeleteFunc(fn func(key K, value V) bool) mapValuesList[K, V
 	return deleted
 }
 
-func (mp *Map[K, V]) Remove(key K) *V {
+func (mp *Map[K, V]) Remove(key K) (V, bool) {
 	return mp.RemoveCond(key, nil)
 }
 
-func (mp *Map[K, V]) RemoveCond(key K, cond func(V) bool) *V {
+func (mp *Map[K, V]) RemoveCond(key K, cond func(V) bool) (V, bool) {
 	if mp == nil {
-		return nil
+		var zero V
+		return zero, false
 	}
 
 	core := mp.init()
@@ -377,11 +378,7 @@ func (mp *Map[K, V]) RemoveCond(key K, cond func(V) bool) *V {
 	}
 	core.mu.Unlock()
 
-	if exists {
-		return &v
-	}
-
-	return nil
+	return v, exists
 }
 
 func (mp *Map[K, V]) Modify(fn func(value *V) bool) mapValuesList[K, V] {

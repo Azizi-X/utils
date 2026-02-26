@@ -76,13 +76,8 @@ func makeStack(err error, skip int, options stackOptions) Stack {
 	frames := frames(skip, options)
 	memStats := memStats()
 
-	errStr := ""
-	if err != nil {
-		errStr = err.Error()
-	}
-
 	return Stack{
-		Error:    errStr,
+		Error:    err,
 		Time:     time.Now().UnixMilli(),
 		Frames:   frames,
 		MemStats: memStats,

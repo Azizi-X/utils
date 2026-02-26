@@ -20,7 +20,7 @@ var (
 
 type listCore[T any] struct {
 	mu     sync.RWMutex
-	limit  *int
+	limit  int
 	equal  func(a, b T) bool
 	values []T
 }
@@ -55,11 +55,11 @@ func (lst *List[T]) RandomItem() *T {
 }
 
 func (core *listCore[T]) checkLimit() {
-	if core.limit == nil {
+	if core.limit == 0 {
 		return
 	}
 
-	for len(core.values) > *core.limit {
+	for len(core.values) > core.limit {
 		core.values = core.values[1:]
 	}
 }
@@ -86,7 +86,7 @@ func (lst *List[T]) SetLimit(limit int) *List[T] {
 	core := lst.init()
 
 	core.mu.Lock()
-	core.limit = &limit
+	core.limit = limit
 	core.checkLimit()
 	core.mu.Unlock()
 
@@ -212,7 +212,7 @@ func (lst *List[T]) Join(sep string) string {
 
 func (lst *List[T]) RawList() (values []T) {
 	if lst == nil {
-		return []T{}
+		return nil
 	}
 
 	core := lst.init()
@@ -235,7 +235,7 @@ func (lst *List[T]) Backward() iter.Seq2[int, T] {
 
 func (lst *List[T]) GetList() (values []T) {
 	if lst == nil {
-		return []T{}
+		return nil
 	}
 
 	core := lst.init()
@@ -267,7 +267,7 @@ func (lst *List[T]) GetFunc(fn func(T) bool) (T, bool) {
 
 func (lst *List[T]) Collect(fn func(T) bool) (values []T) {
 	if lst == nil {
-		return []T{}
+		return nil
 	}
 
 	core := lst.init()

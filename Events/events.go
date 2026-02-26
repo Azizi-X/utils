@@ -18,7 +18,7 @@ type eventInter[T any] interface {
 
 type Event[T any, Z eventInter[T]] struct {
 	Name      string
-	Callbacks atomic.Pointer[[]callback[T, Z]]
+	Callbacks atomic.Pointer[[]*callback[T, Z]]
 }
 
 type callback[T any, Z eventInter[T]] struct {
@@ -42,7 +42,7 @@ func New[T any, Z eventInter[T]](name string) *Event[T, Z] {
 		Name: name,
 	}
 
-	initial := make([]callback[T, Z], 0)
+	initial := make([]*callback[T, Z], 0)
 	event.Callbacks.Store(&initial)
 
 	return event
@@ -98,7 +98,7 @@ func (e *Event[T, Z]) removeCtx(ctx ctxInter, keys ...Key) {
 }
 
 func (e *Event[T, Z]) addCallback(idx int, fn Z, ctx ctxInter, keys ...Key) {
-	cb := callback[T, Z]{fn, ctx, keys}
+	cb := &callback[T, Z]{fn, ctx, keys}
 
 	if cb.isNil() {
 		panic(fmt.Errorf("Subscribe can not be: %v", fn))
@@ -112,7 +112,7 @@ func (e *Event[T, Z]) addCallback(idx int, fn Z, ctx ctxInter, keys ...Key) {
 			idx = len(oldSlice)
 		}
 
-		newSlice := make([]callback[T, Z], len(oldSlice)+1)
+		newSlice := make([]*callback[T, Z], len(oldSlice)+1)
 		copy(newSlice[:idx], oldSlice[:idx])
 		newSlice[idx] = cb
 		copy(newSlice[idx+1:], oldSlice[idx:])
@@ -128,7 +128,7 @@ func (e *Event[T, Z]) removeCallback(ctx ctxInter, keys ...Key) {
 		ctx.CancelWithErr(ErrCanceled)
 	}
 
-	isMatch := func(cb callback[T, Z]) bool {
+	isMatch := func(cb *callback[T, Z]) bool {
 		if len(keys) > 0 && slices.Equal(cb.Keys, keys) {
 			return true
 		} else if cb.Ctx != nil && cb.Ctx == ctx {

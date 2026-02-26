@@ -8,11 +8,9 @@ func HandleGroups(fns []func()) {
 	wg := new(sync.WaitGroup)
 
 	for _, fn := range fns {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			fn()
-		}()
+		})
 	}
 
 	wg.Wait()

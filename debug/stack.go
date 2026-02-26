@@ -16,7 +16,7 @@ type MemStats struct {
 }
 
 type Stack struct {
-	Error    string
+	Error    error
 	Time     int64
 	Frames   []StackFrame
 	MemStats MemStats
@@ -38,7 +38,7 @@ type stackOptions struct {
 func (s *Stack) Hash(extra ...string) string {
 	var builder strings.Builder
 
-	builder.WriteString(s.Error)
+	builder.WriteString(s.Error.Error())
 
 	for i := range extra {
 		builder.WriteString(extra[i])
