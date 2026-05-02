@@ -180,16 +180,29 @@ func (lst *List[T]) Sort(fn func(i, j T) bool) {
 	core.mu.Unlock()
 }
 
-func (lst *List[T]) GetListClear() (values []T) {
+func (lst *List[T]) GetList(clear ...bool) (values []T) {
 	if lst == nil {
 		return []T{}
 	}
 
+	doClear := len(clear) > 0 && clear[0]
+
 	core := lst.init()
-	core.mu.Lock()
+
+	if doClear {
+		core.mu.Lock()
+	} else {
+		core.mu.RLock()
+	}
+
 	values = append(values, core.values...)
-	core.values = []T{}
-	core.mu.Unlock()
+
+	if doClear {
+		core.values = []T{}
+		core.mu.Unlock()
+	} else {
+		core.mu.RUnlock()
+	}
 	return
 }
 
@@ -222,27 +235,15 @@ func (lst *List[T]) RawList() (values []T) {
 	return values
 }
 
-func (lst *List[T]) Backward() iter.Seq2[int, T] {
+func (lst *List[T]) Backward(clear ...bool) iter.Seq2[int, T] {
 	return func(yield func(int, T) bool) {
-		s := lst.GetList()
+		s := lst.GetList(clear...)
 		for i := len(s) - 1; i >= 0; i-- {
 			if !yield(i, s[i]) {
 				return
 			}
 		}
 	}
-}
-
-func (lst *List[T]) GetList() (values []T) {
-	if lst == nil {
-		return nil
-	}
-
-	core := lst.init()
-	core.mu.RLock()
-	values = append(values, core.values...)
-	core.mu.RUnlock()
-	return
 }
 
 func (lst *List[T]) GetFunc(fn func(T) bool) (T, bool) {
