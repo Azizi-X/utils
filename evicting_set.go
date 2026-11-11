@@ -8,7 +8,7 @@ import (
 type EvictingSet[T comparable] struct {
 	values      map[T]struct{}
 	order       []T
-	max         int
+	limit       int
 	mu          sync.RWMutex `json:"-"`
 	Broadcaster *Broadcaster[T]
 	allowFunc   func(T T) bool
@@ -29,9 +29,8 @@ func (rd *EvictingSet[T]) Add(id T) {
 
 		rd.values[id] = struct{}{}
 		rd.order = append(rd.order, id)
+		rd.evictItems()
 	}
-
-	rd.evictItems()
 
 	rd.mu.Unlock()
 }
@@ -90,14 +89,14 @@ func (rd *EvictingSet[T]) Len() int {
 	return length
 }
 
-func (rd *EvictingSet[T]) SetMax(max int) *EvictingSet[T] {
+func (rd *EvictingSet[T]) SetMax(limit int) *EvictingSet[T] {
 	rd.mu.Lock()
-	if rd.max == max {
+	if rd.limit == limit {
 		rd.mu.Unlock()
 		return rd
 	}
 
-	rd.max = max
+	rd.limit = limit
 	rd.evictItems()
 	rd.mu.Unlock()
 
@@ -105,7 +104,7 @@ func (rd *EvictingSet[T]) SetMax(max int) *EvictingSet[T] {
 }
 
 func (rd *EvictingSet[T]) evictItems() {
-	for len(rd.values) > rd.max && len(rd.order) > 0 {
+	for len(rd.values) > rd.limit && len(rd.order) > 0 {
 		evictKey := rd.order[0]
 		rd.order = rd.order[1:]
 		delete(rd.values, evictKey)
@@ -117,6 +116,6 @@ func (d *EvictingSet[T]) WithBroadcaster() *EvictingSet[T] {
 	return d
 }
 
-func NewEvictingSet[T comparable](max int) *EvictingSet[T] {
-	return &EvictingSet[T]{values: map[T]struct{}{}, max: max}
+func NewEvictingSet[T comparable](limit int) *EvictingSet[T] {
+	return &EvictingSet[T]{values: map[T]struct{}{}, limit: limit}
 }

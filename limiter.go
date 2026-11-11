@@ -20,7 +20,7 @@ type Limiter struct {
 	ctx      context.Context
 }
 
-func NewLimiter(cooldown time.Duration, ctx context.Context) *Limiter {
+func NewLimiter(ctx context.Context, cooldown time.Duration) *Limiter {
 	limiter := &Limiter{
 		values:   make(map[string]*item),
 		cooldown: cooldown,

@@ -8,13 +8,13 @@ import (
 
 type StopChecker struct {
 	Keys       []string
-	Ctx        Context
+	Ctx        *Context
 	ShouldStop bool
 	once       sync.Once
 	processes  *List[*StopChecker]
 }
 
-func (sc *StopChecker) LoopC(d time.Duration, fn func(ctx Context)) bool {
+func (sc *StopChecker) LoopC(d time.Duration, fn func(ctx *Context)) bool {
 	ctx := sc.Ctx.NewCtx()
 
 	fn(ctx)
@@ -23,8 +23,6 @@ func (sc *StopChecker) LoopC(d time.Duration, fn func(ctx Context)) bool {
 		select {
 		case <-time.After(d):
 			fn(ctx)
-		case <-sc.Ctx.C():
-			return sc.ShouldStop
 		case <-ctx.C():
 			return sc.ShouldStop
 		}
@@ -32,13 +30,18 @@ func (sc *StopChecker) LoopC(d time.Duration, fn func(ctx Context)) bool {
 }
 
 func (sc *StopChecker) Loop(d time.Duration, fn func()) bool {
-	return sc.LoopC(d, func(_ Context) {
+	return sc.LoopC(d, func(_ *Context) {
 		fn()
 	})
 }
 
 func (sc *StopChecker) OnCancel(fn func()) {
-	sc.Ctx.SetOnCancel(func(_ string) {
+	if fn == nil {
+		sc.Ctx.SetOnCancel(nil)
+		return
+	}
+
+	sc.Ctx.SetOnCancel(func(error) {
 		fn()
 	})
 }
@@ -56,9 +59,9 @@ func (sc *StopChecker) Close() {
 	sc.once.Do(func() {
 		sc.ShouldStop = true
 		sc.processes.DeleteFunc(func(value *StopChecker) bool {
-			return value.Ctx.Context == sc.Ctx.Context
+			return value == sc
 		})
-		sc.Ctx.CancelFunc()
+		sc.Ctx.Cancel()
 	})
 }
 

@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"time"
@@ -9,24 +10,28 @@ import (
 var ErrContextTimeout = errors.New("timeout")
 
 type Context struct {
-	Context    context.Context    `json:"-"`
-	CancelFunc context.CancelFunc `json:"-"`
-	onCancel   func(reason string)
-	Reason     string
-	Err        error
-	canceled   bool
+	context      context.Context
+	cancelFunc   context.CancelFunc
+	stopOnCancel func() bool
+	reason       string
+	err          error
+	canceled     bool
 }
 
-func (ctx *Context) NewCtx() Context {
-	return NewContext(ctx.Context)
+func (ctx *Context) NewCtx() *Context {
+	return NewContext(ctx.context)
 }
 
-func (ctx *Context) NewCtxTimeout(timeout time.Duration) Context {
-	return NewCtxTimeout(ctx.Context, timeout)
+func (ctx *Context) NewCtxTimeout(timeout time.Duration) *Context {
+	return NewCtxTimeout(ctx.context, timeout)
 }
 
-func (ctx *Context) GetContextErr() error {
-	return ctx.Context.Err()
+func (ctx *Context) Err() error {
+	return cmp.Or(ctx.err, ctx.context.Err())
+}
+
+func (ctx *Context) Context() context.Context {
+	return ctx.context
 }
 
 func (ctx *Context) Wait() {
@@ -38,55 +43,72 @@ func (ctx *Context) Done() bool {
 }
 
 func (ctx *Context) C() <-chan struct{} {
-	return ctx.Context.Done()
+	return ctx.context.Done()
 }
 
 func (ctx *Context) Alive() bool {
-	return ctx.Context.Err() == nil
+	return ctx.context.Err() == nil
 }
 
-func (ctx *Context) SetOnCancel(onCancel func(reason string)) {
-	ctx.onCancel = onCancel
+func (ctx *Context) IsE(err error) bool {
+	return errors.Is(ctx.Err(), err)
+}
+
+func (ctx *Context) IsR(reason string) bool {
+	return ctx.reason == reason
+}
+
+func (ctx *Context) SetOnCancel(fn func(error)) {
+	if ctx.stopOnCancel != nil {
+		ctx.stopOnCancel()
+		ctx.stopOnCancel = nil
+	}
+
+	if fn != nil {
+		ctx.stopOnCancel = context.AfterFunc(ctx.context, func() {
+			fn(ctx.Err())
+		})
+	}
 }
 
 func (ctx *Context) CancelWithErr(err error) {
-	if ctx.Err == nil {
-		ctx.Err = err
+	if err == nil {
+		ctx.Cancel()
+		return
 	}
-	ctx.CancelWithReason(err.Error())
+
+	if ctx.err == nil {
+		ctx.err = err
+	}
+
+	ctx.CancelWithReason(ctx.err.Error())
 }
 
 func (ctx *Context) CancelWithReason(reason string) {
-	if ctx.Reason == "" {
-		ctx.Reason = reason
+	if ctx.reason == "" {
+		ctx.reason = reason
 	}
-	if ctx.Err == nil {
-		ctx.Err = errors.New(reason)
+	if ctx.err == nil {
+		ctx.err = errors.New(reason)
 	}
 	ctx.Cancel()
 }
 
 func (ctx *Context) Cancel() {
-	canceled := ctx.canceled
 	ctx.canceled = true
-
-	ctx.CancelFunc()
-
-	if !canceled && ctx.onCancel != nil {
-		go ctx.onCancel(ctx.Reason)
-	}
+	ctx.cancelFunc()
 }
 
-func NewContext(parent context.Context) Context {
+func NewContext(parent context.Context) *Context {
 	ctx, cancel := context.WithCancel(parent)
 
-	return Context{
-		Context:    ctx,
-		CancelFunc: cancel,
+	return &Context{
+		context:    ctx,
+		cancelFunc: cancel,
 	}
 }
 
-func NewCtxTimeout(parent context.Context, timeout time.Duration) Context {
+func NewCtxTimeout(parent context.Context, timeout time.Duration) *Context {
 	ctx := NewContext(parent)
 	ticker := time.After(timeout)
 

@@ -6,6 +6,8 @@ import (
 	"slices"
 	"sync/atomic"
 	"unsafe"
+
+	"github.com/Azizi-X/utils"
 )
 
 var ErrCanceled = errors.New("context canceled")
@@ -23,18 +25,8 @@ type Event[T any, Z eventInter[T]] struct {
 
 type callback[T any, Z eventInter[T]] struct {
 	Callback Z
-	Ctx      ctxInter
+	Ctx      *utils.Context
 	Keys     []Key
-}
-
-type ctxInter interface {
-	Alive() bool
-	Wait()
-	CancelWithErr(error)
-}
-
-type Sync struct {
-	ctxInter
 }
 
 func New[T any, Z eventInter[T]](name string) *Event[T, Z] {
@@ -78,26 +70,28 @@ func (e *Event[T, Z]) SubscribeIdx(fn Z, idx int, keys ...Key) {
 	e.addCallback(idx, fn, nil, keys...)
 }
 
-func (e *Event[T, Z]) SubscribeCtx(fn Z, ctx ctxInter, keys ...Key) Sync {
+func (e *Event[T, Z]) SubscribeCtx(fn Z, ctx *utils.Context, keys ...Key) {
+	if ctx == nil {
+		panic("Events: nil subscription context")
+	}
+
 	e.addCallback(-1, fn, ctx, keys...)
 
 	go func() {
 		ctx.Wait()
 		e.removeCtx(ctx, keys...)
 	}()
-
-	return Sync{ctx}
 }
 
 func (e *Event[T, Z]) Remove(keys ...Key) {
 	e.removeCtx(nil, keys...)
 }
 
-func (e *Event[T, Z]) removeCtx(ctx ctxInter, keys ...Key) {
+func (e *Event[T, Z]) removeCtx(ctx *utils.Context, keys ...Key) {
 	e.removeCallback(ctx, keys...)
 }
 
-func (e *Event[T, Z]) addCallback(idx int, fn Z, ctx ctxInter, keys ...Key) {
+func (e *Event[T, Z]) addCallback(idx int, fn Z, ctx *utils.Context, keys ...Key) {
 	cb := &callback[T, Z]{fn, ctx, keys}
 
 	if cb.isNil() {
@@ -123,7 +117,7 @@ func (e *Event[T, Z]) addCallback(idx int, fn Z, ctx ctxInter, keys ...Key) {
 	}
 }
 
-func (e *Event[T, Z]) removeCallback(ctx ctxInter, keys ...Key) {
+func (e *Event[T, Z]) removeCallback(ctx *utils.Context, keys ...Key) {
 	if ctx != nil {
 		ctx.CancelWithErr(ErrCanceled)
 	}

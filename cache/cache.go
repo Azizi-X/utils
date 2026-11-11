@@ -3,311 +3,383 @@ package cache
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"slices"
 	"sync"
 	"time"
 )
 
 const (
-	ResetTimer cacheOption = iota
+	ResetTimer Flag = 1 << iota
 	ResetTimerOnErr
+	ResetTimerWith
 
-	NoLimit           cacheLimit = -1
-	DefaultCacheLimit cacheLimit = 2000
+	NoLimit           = -1
+	DefaultCacheLimit = 2000
 
-	NoExpire time.Duration = -1
+	NoExpiration time.Duration = -1
 
 	DefaultDuration   = 15 * time.Minute
-	HourDuration      = 1 * time.Hour
-	FullDayDuration   = 24 * time.Hour
+	HalfHourDuration  = 30 * time.Minute
+	HourDuration      = time.Hour
+	DayDuration       = 24 * time.Hour
+	WeekDuration      = 7 * DayDuration
 	HalfDayDuration   = 12 * time.Hour
-	ShortDuration     = 5 * time.Minute
 	TenMinuteDuration = 10 * time.Minute
+	ShortDuration     = 5 * time.Minute
 )
 
-var (
-	ErrCacheNotFound = errors.New("cache not found")
-	ErrCacheExpired  = errors.New("cache expired")
+type Flag uint8
 
-	keeper = NewKeeper()
-)
+type Result[V any] struct {
+	Value V
+	Err   error
+}
 
-type cacheOption int
-type cacheLimit = int
-
-type Cache[K comparable, T any] struct {
-	Items map[K]cacheItem[T]
+type Cache[K comparable, V any] struct {
 	mu    sync.RWMutex
-	Ctx   context.Context
-	Limit int
+	items map[K]item[Result[V]]
+	ctx   context.Context
+	limit int
+}
+
+type item[V any] struct {
+	value     V
+	expiresAt int64
+	duration  time.Duration
+}
+
+type managedCache interface {
+	context() context.Context
+	cleanup(int64)
+	appendItems([][]byte, int64) [][]byte
+}
+
+type cacheList struct {
+	mu     sync.Mutex
+	caches []managedCache
 }
 
 type CacheKeeper struct {
-	Caches []cacheInter
-	mu     sync.Mutex
+	cacheList
 }
 
-type cacheItem[T any] struct {
-	Err      error
-	Expires  time.Time
-	Duration time.Duration
-	Value    T
-}
+var cleanupCaches cacheList
 
-type cacheInter interface {
-	C() context.Context
-	GetItems() [][]byte
-	Check()
-}
+func New[K comparable, V any](ctx context.Context) *Cache[K, V] {
+	cache := &Cache[K, V]{
+		items: make(map[K]item[Result[V]]),
+		ctx:   ctx,
+		limit: DefaultCacheLimit,
+	}
 
-type keeperInter interface {
-	Add(cache cacheInter)
-	GetItems() [][][]byte
+	cleanupCaches.add(cache)
+	return cache
 }
 
 func NewKeeper() *CacheKeeper {
 	return &CacheKeeper{}
 }
 
-func (ck *CacheKeeper) Add(cache cacheInter) {
-	ck.mu.Lock()
-	ck.Caches = append(ck.Caches, cache)
-	ck.mu.Unlock()
+func (l *cacheList) add(cache managedCache) {
+	l.mu.Lock()
+	l.caches = append(l.caches, cache)
+	l.mu.Unlock()
 }
 
-func (ck *CacheKeeper) GetItems() (items [][][]byte) {
-	ck.mu.Lock()
-	for _, cache := range ck.Caches {
-		items = append(items, cache.GetItems())
-	}
-	ck.mu.Unlock()
+func (l *cacheList) active() []managedCache {
+	l.mu.Lock()
+	l.caches = slices.DeleteFunc(l.caches, func(cache managedCache) bool {
+		return cache.context().Err() != nil
+	})
+	active := slices.Clone(l.caches)
+	l.mu.Unlock()
+	return active
+}
 
+func (c *Cache[K, V]) Keeper(keeper *CacheKeeper) *Cache[K, V] {
+	if keeper != nil {
+		keeper.add(c)
+	}
+	return c
+}
+
+func (k *CacheKeeper) GetItems() (items [][]byte) {
+	now := time.Now().UnixNano()
+	for _, cache := range k.active() {
+		items = cache.appendItems(items, now)
+	}
 	return
 }
 
-func (ck *CacheKeeper) _cleanup() {
-	ticker := time.NewTicker(60 * time.Second)
+func runCleanup() {
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
 
-	for range ticker.C {
-		ck.mu.Lock()
-		ck.Caches = slices.DeleteFunc(ck.Caches, func(cache cacheInter) bool {
-			ctx := cache.C()
-			return ctx != nil && ctx.Err() != nil
-		})
-		caches := slices.Clone(ck.Caches)
-		ck.mu.Unlock()
-
-		for _, cache := range caches {
-			cache.Check()
+	for now := range ticker.C {
+		timestamp := now.UnixNano()
+		for _, cache := range cleanupCaches.active() {
+			cache.cleanup(timestamp)
 		}
 	}
-}
-
-func NewCache[K comparable, V any](ctx context.Context) *Cache[K, V] {
-	c := &Cache[K, V]{Items: map[K]cacheItem[V]{}, Ctx: ctx, Limit: DefaultCacheLimit}
-
-	keeper.Add(c)
-
-	return c
-}
-
-func (c *Cache[K, V]) C() context.Context {
-	return c.Ctx
 }
 
 func (c *Cache[K, V]) SetLimit(limit int) *Cache[K, V] {
-	c.Limit = limit
-	return c
-}
-
-func (c *Cache[K, V]) Nolimit() *Cache[K, V] {
-	c.Limit = NoLimit
-	return c
-}
-
-func (c *Cache[K, V]) Keeper(keeper keeperInter) *Cache[K, V] {
-	keeper.Add(c)
-	return c
-}
-
-func (c *Cache[K, V]) Exists(key K, options ...cacheOption) bool {
-	v, _ := c.GetErr(key, options...)
-	return v != nil
-}
-
-func (c *Cache[K, V]) UniqueSet(key K, data V, expires time.Duration, options ...cacheOption) bool {
-	c.mu.Lock()
-	_, already_set := c.getSetUnsafe(key, data, expires, options...)
-	c.mu.Unlock()
-	return !already_set
-}
-
-func (c *Cache[K, V]) GetSet(key K, data V, expires time.Duration, options ...cacheOption) *V {
-	c.mu.Lock()
-	v, _ := c.getSetUnsafe(key, data, expires, options...)
-	c.mu.Unlock()
-	return v
-}
-
-func (c *Cache[K, V]) getSetUnsafe(key K, data V, expires time.Duration, options ...cacheOption) (*V, bool) {
-	v, err := c.getUnsafe(key, options...)
-	if v != nil && err != nil {
-		return nil, false
-	} else if v != nil {
-		return &v.Value, true
+	if limit < 0 {
+		limit = NoLimit
 	}
 
-	c.setUnsafe(key, &data, nil, expires)
-
-	return &data, false
+	c.mu.Lock()
+	c.limit = limit
+	c.trimUnsafe()
+	c.mu.Unlock()
+	return c
 }
 
-func (c *Cache[K, V]) Get(key K, options ...cacheOption) *V {
-	v, err := c.GetErr(key, options...)
-	if err != nil {
-		return nil
-	}
-
-	return v
+func (c *Cache[K, V]) NoLimit() *Cache[K, V] {
+	return c.SetLimit(NoLimit)
 }
 
-func (c *Cache[K, V]) GetErr(key K, options ...cacheOption) (*V, error) {
-	full_mu := slices.Contains(options, ResetTimer)
-
-	if full_mu {
+func (c *Cache[K, V]) Get(key K, flags ...Flag) (Result[V], bool) {
+	flag := joinFlags(flags)
+	if flag != 0 {
 		c.mu.Lock()
-	} else {
-		c.mu.RLock()
-	}
-
-	item, err := c.getUnsafe(key, options...)
-
-	if full_mu {
+		value, found := c.getUnsafe(key, flag, 0)
 		c.mu.Unlock()
-	} else {
-		c.mu.RUnlock()
+		return value, found
 	}
 
-	if item == nil && err != nil {
-		return nil, err
-	} else if err != nil {
-		return &item.Value, err
+	c.mu.RLock()
+	entry, found := c.items[key]
+	if found && entry.expiresAt > 0 && time.Now().UnixNano() >= entry.expiresAt {
+		found = false
 	}
+	c.mu.RUnlock()
 
-	return &item.Value, nil
+	if !found {
+		var zero Result[V]
+		return zero, false
+	}
+	return entry.value, true
 }
 
-func (c *Cache[K, V]) Set(key K, data V, expires ...time.Duration) error {
-	return c.SetErr(key, &data, nil, expires...)
+func (c *Cache[K, V]) Exists(key K, flags ...Flag) bool {
+	_, found := c.Get(key, flags...)
+	return found
 }
 
-func (c *Cache[K, V]) SetErr(key K, data *V, err error, expires ...time.Duration) error {
+func (c *Cache[K, V]) Set(key K, value V) {
+	c.SetFor(key, value, NoExpiration)
+}
+
+func (c *Cache[K, V]) SetFor(key K, value V, duration time.Duration) {
+	c.setFor(key, Result[V]{Value: value}, duration)
+}
+
+func (c *Cache[K, V]) SetErr(key K, err error) {
+	c.SetErrFor(key, err, NoExpiration)
+}
+
+func (c *Cache[K, V]) SetErrFor(key K, err error, duration time.Duration) {
+	c.setFor(key, Result[V]{Err: err}, duration)
+}
+
+func (c *Cache[K, V]) setFor(key K, value Result[V], duration time.Duration) {
 	c.mu.Lock()
-	c.setUnsafe(key, data, err, expires...)
+	c.setUnsafe(key, value, duration)
 	c.mu.Unlock()
-
-	return err
 }
 
-func (c *Cache[K, V]) getUnsafe(key K, options ...cacheOption) (*cacheItem[V], error) {
-	item, ok := c.Items[key]
-	if !ok {
-		return nil, ErrCacheNotFound
-	}
-
-	if item.Duration != NoExpire && item.Expires.Before(time.Now()) {
-		return nil, ErrCacheExpired
-	}
-
-	if (slices.Contains(options, ResetTimer) && item.Err == nil) ||
-		(item.Err != nil && slices.Contains(options, ResetTimerOnErr)) {
-		item.Expires = time.Now().Add(item.Duration)
-		c.Items[key] = item
-	}
-
-	return &item, item.Err
+func (c *Cache[K, V]) GetSet(key K, value V, flags ...Flag) (Result[V], bool) {
+	result, found, _ := c.getSet(key, value, NoExpiration, joinFlags(flags))
+	return result, found
 }
 
-func (c *Cache[K, V]) setUnsafe(key K, data *V, err error, expires ...time.Duration) {
-	var holder V
-	if data != nil {
-		holder = *data
+func (c *Cache[K, V]) GetSetFor(key K, value V, duration time.Duration, flags ...Flag) (Result[V], bool) {
+	result, found, _ := c.getSet(key, value, duration, joinFlags(flags))
+	return result, found
+}
+
+func (c *Cache[K, V]) GetSetFn(key K, fn func() V, flags ...Flag) (Result[V], bool) {
+	return c.getSetFn(key, fn, NoExpiration, joinFlags(flags))
+}
+
+func (c *Cache[K, V]) GetSetFnFor(key K, fn func() V, duration time.Duration, flags ...Flag) (Result[V], bool) {
+	return c.getSetFn(key, fn, duration, joinFlags(flags))
+}
+
+func (c *Cache[K, V]) SetUnique(key K, value V, flags ...Flag) bool {
+	_, found, stored := c.getSet(key, value, NoExpiration, joinFlags(flags))
+	return !found && stored
+}
+
+func (c *Cache[K, V]) SetUniqueFor(key K, value V, duration time.Duration, flags ...Flag) bool {
+	_, found, stored := c.getSet(key, value, duration, joinFlags(flags))
+	return !found && stored
+}
+
+func (c *Cache[K, V]) getSet(key K, value V, duration time.Duration, flag Flag) (Result[V], bool, bool) {
+	c.mu.Lock()
+	current, found := c.getUnsafe(key, flag, duration)
+	if found {
+		c.mu.Unlock()
+		return current, true, false
 	}
 
-	expiry := NoExpire
-	if len(expires) > 0 {
-		expiry = expires[0]
+	result := Result[V]{Value: value}
+	stored := c.setUnsafe(key, result, duration)
+	c.mu.Unlock()
+	return result, false, stored
+}
+
+func (c *Cache[K, V]) getSetFn(key K, fn func() V, duration time.Duration, flag Flag) (Result[V], bool) {
+	c.mu.Lock()
+	current, found := c.getUnsafe(key, flag, duration)
+	if found {
+		c.mu.Unlock()
+		return current, true
 	}
 
-	if item, ok := c.Items[key]; ok {
-		if item.Duration == NoExpire || item.Duration > expiry {
-			expiry = item.Duration
+	result := Result[V]{Value: fn()}
+	c.setUnsafe(key, result, duration)
+	c.mu.Unlock()
+	return result, false
+}
+
+func (c *Cache[K, V]) getUnsafe(key K, flag Flag, duration time.Duration) (Result[V], bool) {
+	entry, found := c.items[key]
+	if !found {
+		var zero Result[V]
+		return zero, false
+	}
+
+	if entry.expiresAt == 0 {
+		return entry.value, true
+	}
+
+	now := time.Now().UnixNano()
+	if now >= entry.expiresAt {
+		delete(c.items, key)
+		var zero Result[V]
+		return zero, false
+	}
+
+	if shouldReset(entry.value, flag) {
+		if flag&ResetTimerWith != 0 && duration != 0 {
+			entry.duration = duration
 		}
-	}
 
-	c.Items[key] = cacheItem[V]{Expires: time.Now().Add(expiry), Err: err, Duration: expiry, Value: holder}
+		if entry.duration == NoExpiration {
+			entry.expiresAt = 0
+		} else {
+			entry.expiresAt = now + int64(entry.duration)
+		}
+		c.items[key] = entry
+	}
+	return entry.value, true
 }
 
-func (c *Cache[K, V]) Clear() {
-	c.mu.Lock()
-	c.Items = make(map[K]cacheItem[V])
-	c.mu.Unlock()
+func joinFlags(flags []Flag) (flag Flag) {
+	for _, current := range flags {
+		flag |= current
+	}
+	return
+}
+
+func shouldReset[V any](result Result[V], flag Flag) bool {
+	if result.Err != nil {
+		return flag&ResetTimerOnErr != 0
+	}
+	return flag&(ResetTimer|ResetTimerWith) != 0
+}
+
+func (c *Cache[K, V]) setUnsafe(key K, value Result[V], duration time.Duration) bool {
+	if duration == 0 {
+		return false
+	}
+
+	if c.limit == 0 {
+		delete(c.items, key)
+		return false
+	}
+
+	if _, found := c.items[key]; !found && c.limit > 0 && len(c.items) >= c.limit {
+		c.removeOneUnsafe()
+	}
+
+	entry := item[Result[V]]{value: value}
+	if duration != NoExpiration {
+		entry.duration = duration
+		entry.expiresAt = time.Now().UnixNano() + int64(duration)
+	}
+	c.items[key] = entry
+	return true
 }
 
 func (c *Cache[K, V]) Remove(key K) bool {
 	c.mu.Lock()
-	_, ok := c.Items[key]
-	if ok {
-		delete(c.Items, key)
-	}
+	_, found := c.items[key]
+	delete(c.items, key)
 	c.mu.Unlock()
-	return ok
+	return found
 }
 
-func (c *Cache[K, V]) GetItems() [][]byte {
-	c.mu.RLock()
-
-	items := make([][]byte, 0, len(c.Items))
-	for _, v := range c.Items {
-		bytes, _ := json.Marshal(v.Value)
-		items = append(items, bytes)
-	}
-
-	c.mu.RUnlock()
-
-	return items
+func (c *Cache[K, V]) Clear() {
+	c.mu.Lock()
+	c.items = make(map[K]item[Result[V]])
+	c.mu.Unlock()
 }
 
-func (c *Cache[K, V]) Length() int {
+func (c *Cache[K, V]) Len() int {
 	c.mu.RLock()
-	length := len(c.Items)
+	length := len(c.items)
 	c.mu.RUnlock()
 	return length
 }
 
-func (c *Cache[K, V]) Check() {
+func (c *Cache[K, V]) context() context.Context {
+	return c.ctx
+}
+
+func (c *Cache[K, V]) cleanup(now int64) {
 	c.mu.Lock()
-	now := time.Now()
-
-	for key, item := range c.Items {
-		if item.Duration != NoExpire && now.After(item.Expires) {
-			delete(c.Items, key)
+	for key, entry := range c.items {
+		if entry.expiresAt > 0 && now >= entry.expiresAt {
+			delete(c.items, key)
 		}
 	}
-
-	if c.Limit != NoLimit {
-		for len(c.Items) > c.Limit {
-			for key := range c.Items {
-				delete(c.Items, key)
-				break
-			}
-		}
-	}
-
+	c.trimUnsafe()
 	c.mu.Unlock()
 }
 
+func (c *Cache[K, V]) appendItems(items [][]byte, now int64) [][]byte {
+	c.mu.RLock()
+	for _, entry := range c.items {
+		if entry.expiresAt > 0 && now >= entry.expiresAt {
+			continue
+		}
+
+		value, err := json.Marshal(entry.value.Value)
+		if err == nil {
+			items = append(items, value)
+		}
+	}
+	c.mu.RUnlock()
+	return items
+}
+
+func (c *Cache[K, V]) trimUnsafe() {
+	for c.limit >= 0 && len(c.items) > c.limit {
+		c.removeOneUnsafe()
+	}
+}
+
+func (c *Cache[K, V]) removeOneUnsafe() {
+	for key := range c.items {
+		delete(c.items, key)
+		return
+	}
+}
+
 func init() {
-	go keeper._cleanup()
+	go runCleanup()
 }

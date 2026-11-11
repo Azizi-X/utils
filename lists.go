@@ -3,8 +3,7 @@ package utils
 import (
 	"encoding/json"
 	"fmt"
-	"iter"
-	"math/rand"
+	"math/rand/v2"
 	"reflect"
 	"slices"
 	"sort"
@@ -41,19 +40,6 @@ func (lst *List[T]) Reverse() {
 	core.mu.Unlock()
 }
 
-func (lst *List[T]) RandomItem() *T {
-	if lst == nil {
-		return nil
-	}
-
-	core := lst.init()
-
-	core.mu.RLock()
-	randomItem := GetRandomItem(core.values)
-	core.mu.RUnlock()
-	return randomItem
-}
-
 func (core *listCore[T]) checkLimit() {
 	if core.limit == 0 {
 		return
@@ -62,6 +48,12 @@ func (core *listCore[T]) checkLimit() {
 	for len(core.values) > core.limit {
 		core.values = core.values[1:]
 	}
+}
+
+func (core *listCore[T]) shuffle() {
+	rand.Shuffle(len(core.values), func(i, j int) {
+		core.values[i], core.values[j] = core.values[j], core.values[i]
+	})
 }
 
 func (lst *List[T]) SetEqual(fn func(a, b T) bool) *List[T] {
@@ -114,27 +106,6 @@ func (lst *List[T]) Contains(value T) bool {
 	return false
 }
 
-func (lst *List[T]) Last() (T, bool) {
-	if lst == nil {
-		var empty T
-		return empty, false
-	}
-
-	core := lst.init()
-
-	core.mu.RLock()
-
-	if len(core.values) > 0 {
-		core.mu.RUnlock()
-		return core.values[len(core.values)-1], true
-	}
-
-	core.mu.RUnlock()
-
-	var empty T
-	return empty, false
-}
-
 func (lst *List[T]) GetIndex(index int) (T, bool) {
 	if lst != nil {
 		core := lst.init()
@@ -147,10 +118,6 @@ func (lst *List[T]) GetIndex(index int) (T, bool) {
 	}
 	var empty T
 	return empty, false
-}
-
-func (lst *List[T]) Empty() bool {
-	return lst.Length() == 0
 }
 
 func (lst *List[T]) Length() int {
@@ -233,37 +200,6 @@ func (lst *List[T]) RawList() (values []T) {
 	values = core.values
 	core.mu.RUnlock()
 	return values
-}
-
-func (lst *List[T]) Backward(clear ...bool) iter.Seq2[int, T] {
-	return func(yield func(int, T) bool) {
-		s := lst.GetList(clear...)
-		for i := len(s) - 1; i >= 0; i-- {
-			if !yield(i, s[i]) {
-				return
-			}
-		}
-	}
-}
-
-func (lst *List[T]) GetFunc(fn func(T) bool) (T, bool) {
-	if lst == nil {
-		var empty T
-		return empty, false
-	}
-
-	core := lst.init()
-	core.mu.RLock()
-	for i := range core.values {
-		if fn(core.values[i]) {
-			core.mu.RUnlock()
-			return core.values[i], true
-		}
-	}
-
-	core.mu.RUnlock()
-	var empty T
-	return empty, false
 }
 
 func (lst *List[T]) Collect(fn func(T) bool) (values []T) {
@@ -416,55 +352,6 @@ func (lst *List[T]) Remove(value T) []T {
 	})
 }
 
-func (lst *List[T]) ReplaceFunc(fn func(value T) *T, new ...T) bool {
-	if lst == nil {
-		return false
-	}
-
-	core := lst.init()
-
-	core.mu.Lock()
-
-	var found bool
-
-	for i := range core.values {
-		if new := fn(core.values[i]); new != nil {
-			found = true
-			core.values[i] = *new
-		}
-	}
-
-	if !found {
-		core.values = append(core.values, new...)
-	}
-
-	core.checkLimit()
-	core.mu.Unlock()
-
-	return found
-}
-
-func (lst *List[T]) Modify(fn func(value *T) bool) []T {
-	if lst == nil {
-		return nil
-	}
-
-	core := lst.init()
-
-	core.mu.Lock()
-
-	var modified []T
-	for i := range core.values {
-		if fn(&core.values[i]) {
-			modified = append(modified, core.values[i])
-		}
-	}
-
-	core.mu.Unlock()
-
-	return modified
-}
-
 func (lst *List[T]) Insert(index int, values ...T) {
 	if lst == nil {
 		return
@@ -486,7 +373,7 @@ func (lst *List[T]) Insert(index int, values ...T) {
 }
 
 func (lst *List[T]) Append(values ...T) {
-	if lst == nil {
+	if lst == nil || len(values) == 0 {
 		return
 	}
 
@@ -498,15 +385,32 @@ func (lst *List[T]) Append(values ...T) {
 	core.mu.Unlock()
 }
 
-func (lst *List[T]) SetList(values []T) {
+func (lst *List[T]) SetList(values []T, shuffle ...bool) {
+	if lst == nil {
+		return
+	}
+
+	doShuffle := len(shuffle) > 0 && shuffle[0]
+
+	core := lst.init()
+
+	core.mu.Lock()
+	core.values = values
+	core.checkLimit()
+	if doShuffle {
+		core.shuffle()
+	}
+	core.mu.Unlock()
+}
+
+func (lst *List[T]) Shuffle() {
 	if lst == nil {
 		return
 	}
 	core := lst.init()
 
 	core.mu.Lock()
-	core.values = values
-	core.checkLimit()
+	core.shuffle()
 	core.mu.Unlock()
 }
 
@@ -576,15 +480,11 @@ func (lst *List[T]) init() *listCore[T] {
 	return (*listCore[T])(core)
 }
 
-func GetRandomItem[T any](lst []T) *T {
-	if len(lst) == 0 {
-		return nil
+func newListCore[T any](values ...T) *listCore[T] {
+	if values == nil {
+		values = []T{}
 	}
 
-	return &lst[rand.Intn(len(lst))]
-}
-
-func newListCore[T any](values ...T) *listCore[T] {
 	return &listCore[T]{
 		values: values,
 	}

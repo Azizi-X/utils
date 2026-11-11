@@ -8,7 +8,7 @@ import (
 type EvictingMap[K comparable, V any] struct {
 	values      map[K]V
 	order       []K
-	max         int
+	limit       int
 	mu          sync.RWMutex `json:"-"`
 	Broadcaster *Broadcaster[K]
 	allowFunc   func(K K, V V) bool
@@ -21,7 +21,6 @@ func (rd *EvictingMap[K, V]) Add(id K, value V) {
 
 	rd.mu.Lock()
 	if _, exists := rd.values[id]; !exists {
-
 		if rd.allowFunc != nil && !rd.allowFunc(id, value) {
 			rd.mu.Unlock()
 			return
@@ -117,14 +116,14 @@ func (rd *EvictingMap[K, V]) Len() int {
 	return length
 }
 
-func (rd *EvictingMap[K, V]) SetMax(max int) *EvictingMap[K, V] {
+func (rd *EvictingMap[K, V]) SetLimit(limit int) *EvictingMap[K, V] {
 	rd.mu.Lock()
-	if rd.max == max {
+	if rd.limit == limit {
 		rd.mu.Unlock()
 		return rd
 	}
 
-	rd.max = max
+	rd.limit = limit
 	rd.evictItems()
 	rd.mu.Unlock()
 
@@ -132,7 +131,7 @@ func (rd *EvictingMap[K, V]) SetMax(max int) *EvictingMap[K, V] {
 }
 
 func (rd *EvictingMap[K, V]) evictItems() {
-	for len(rd.values) > rd.max && len(rd.order) > 0 {
+	for len(rd.values) > rd.limit && len(rd.order) > 0 {
 		evictKey := rd.order[0]
 		rd.order = rd.order[1:]
 		delete(rd.values, evictKey)
@@ -144,6 +143,6 @@ func (rd *EvictingMap[K, V]) WithBroadcaster() *EvictingMap[K, V] {
 	return rd
 }
 
-func NewEvictingMap[K comparable, V any](max int) *EvictingMap[K, V] {
-	return &EvictingMap[K, V]{values: map[K]V{}, max: max}
+func NewEvictingMap[K comparable, V any](limit int) *EvictingMap[K, V] {
+	return &EvictingMap[K, V]{values: map[K]V{}, limit: limit}
 }

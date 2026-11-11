@@ -7,41 +7,16 @@ import (
 	"fmt"
 	"hash"
 	"hash/crc32"
-	"hash/fnv"
 	"reflect"
+	"strconv"
 	"strings"
-	"sync"
-)
 
-var (
-	SafeHasher = newSafeHasher()
+	"github.com/cespare/xxhash/v2"
 )
 
 type fieldData struct {
 	Name  string
 	Value string
-}
-
-type safeHasher struct {
-	hasher hash.Hash64
-	mu     sync.Mutex
-}
-
-func (sh *safeHasher) Hash(input string) uint64 {
-	sh.mu.Lock()
-	defer func() {
-		sh.hasher.Reset()
-		sh.mu.Unlock()
-	}()
-
-	sh.hasher.Write([]byte(input))
-	return sh.hasher.Sum64()
-}
-
-func newSafeHasher() *safeHasher {
-	return &safeHasher{
-		hasher: fnv.New64a(),
-	}
 }
 
 func UniqueCode(data any, length int) (string, error) {
@@ -148,6 +123,18 @@ func hashSingleStruct(hash hash.Hash, value reflect.Value) error {
 		}
 
 		if value == "" {
+			switch field.Kind() {
+			case reflect.Struct:
+				if field.CanInterface() {
+					b, err := json.Marshal(field.Interface())
+					if err == nil {
+						value = string(b)
+					}
+				}
+			}
+		}
+
+		if value == "" {
 			value = fmt.Sprintf("%v", field.Interface())
 		}
 
@@ -169,6 +156,18 @@ func hashSingleStruct(hash hash.Hash, value reflect.Value) error {
 	return nil
 }
 
+func BytesHash(data []byte, length int) string {
+	sum := xxhash.Sum64(data)
+
+	encoded := strconv.FormatUint(sum, 36)
+
+	if len(encoded) > length {
+		return encoded[:length]
+	}
+
+	return encoded
+}
+
 func ShortHash(input string, length int) string {
 	hash := fmt.Sprintf("%08x", crc32.ChecksumIEEE([]byte(input)))
 	length = min(length, len(hash))
@@ -177,12 +176,19 @@ func ShortHash(input string, length int) string {
 }
 
 func ShortNumericHash(input string, length int) string {
-	hash := SafeHasher.Hash(input)
+	hash := XXHash64(input)
 
 	mod := uint64(1)
 	for range length {
 		mod *= 10
 	}
 
-	return fmt.Sprintf("%0*d", length, hash%mod)
+	min := mod / 10
+	value := min + hash%(mod-min)
+
+	return strconv.FormatUint(value, 10)
+}
+
+func XXHash64(s string) uint64 {
+	return xxhash.Sum64String(s)
 }

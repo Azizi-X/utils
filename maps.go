@@ -29,6 +29,34 @@ type mapValues[K comparable, V any] struct {
 
 type mapValuesList[K comparable, V any] []mapValues[K, V]
 
+func (mp *Map[K, V]) EqualFunc(other *Map[K, V], equal func(V, V) bool) bool {
+	left, right := mp.load(), other.load()
+	if left == nil || right == nil {
+		if left == right {
+			return true
+		}
+		if left == nil {
+			left = right
+		}
+		left.mu.RLock()
+		defer left.mu.RUnlock()
+		return len(left.values) == 0
+	}
+
+	first, second := left, right
+	if uintptr(unsafe.Pointer(first)) > uintptr(unsafe.Pointer(second)) {
+		first, second = second, first
+	}
+	first.mu.RLock()
+	defer first.mu.RUnlock()
+	if second != first {
+		second.mu.RLock()
+		defer second.mu.RUnlock()
+	}
+
+	return maps.EqualFunc(left.values, right.values, equal)
+}
+
 func (lst mapValuesList[K, V]) Keys() (keys []K) {
 	for _, value := range lst {
 		keys = append(keys, value.Key)
@@ -89,20 +117,45 @@ func (mp *Map[K, V]) ContainsFunc(fn func(V) bool) bool {
 	return false
 }
 
-func (mp *Map[K, V]) GetKeys() (keys []K) {
+func (mp *Map[K, V]) ForEach(fn func(K, V)) {
+	if mp == nil {
+		return
+	}
+
+	core := mp.init()
+	core.mu.RLock()
+	defer core.mu.RUnlock()
+
+	for key, value := range core.values {
+		fn(key, value)
+	}
+}
+
+func (mp *Map[K, V]) GetKeys(clear ...bool) (keys []K) {
 	if mp == nil {
 		return nil
 	}
 
 	core := mp.init()
 
-	core.mu.RLock()
+	doClear := len(clear) > 0 && clear[0]
+
+	if doClear {
+		core.mu.Lock()
+	} else {
+		core.mu.RLock()
+	}
 
 	for key := range core.values {
 		keys = append(keys, key)
 	}
 
-	core.mu.RUnlock()
+	if doClear {
+		core.clearUnsafe()
+		core.mu.Unlock()
+	} else {
+		core.mu.RUnlock()
+	}
 	return
 }
 
@@ -131,23 +184,6 @@ func (mp *Map[K, V]) GetList(clear ...bool) (lst []V) {
 	} else {
 		core.mu.RUnlock()
 	}
-	return
-}
-
-func (mp *Map[K, V]) GetListAndMap() (lst []V, mapList map[K]V) {
-	if mp == nil {
-		return nil, map[K]V{}
-	}
-
-	core := mp.init()
-
-	core.mu.RLock()
-	for _, value := range core.values {
-		lst = append(lst, value)
-	}
-	mapList = make(map[K]V, len(core.values))
-	maps.Copy(mapList, core.values)
-	core.mu.RUnlock()
 	return
 }
 
@@ -236,6 +272,25 @@ func (mp *Map[K, V]) SetUniqueFn(key K, fn func(exists bool) (V, bool)) bool {
 	return !exists
 }
 
+func (mp *Map[K, V]) GetSetUniqueFn(key K, fn func(value V, exists bool) (V, bool)) bool {
+	if mp == nil {
+		return false
+	}
+
+	core := mp.init()
+
+	core.mu.Lock()
+	v, exists := core.values[key]
+
+	value, ok := fn(v, exists)
+
+	if !exists && ok {
+		core.values[key] = value
+	}
+	core.mu.Unlock()
+	return !exists
+}
+
 func (mp *Map[K, V]) SetUnique(key K, value V) bool {
 	if mp == nil {
 		return false
@@ -264,6 +319,27 @@ func (mp *Map[K, V]) Get(key K) (V, bool) {
 	value, exists := core.values[key]
 	core.mu.RUnlock()
 	return value, exists
+}
+
+func (mp *Map[K, V]) GetFunc(fn func(V) bool) (V, bool) {
+	if mp == nil {
+		var empty V
+		return empty, false
+	}
+
+	core := mp.init()
+
+	core.mu.RLock()
+	defer core.mu.RUnlock()
+
+	for _, value := range core.values {
+		if fn(value) {
+			return value, true
+		}
+	}
+
+	var empty V
+	return empty, false
 }
 
 func (mp *Map[K, V]) GetFrom(keys ...K) (V, bool) {
@@ -300,7 +376,6 @@ func (mp *Map[K, V]) GetSetFn(key K, fn func() V, conds ...func(V) bool) (V, boo
 	v, exists := core.values[key]
 	if !exists {
 		v = fn()
-		core.values[key] = v
 	}
 
 	for _, cond := range conds {
@@ -309,6 +384,10 @@ func (mp *Map[K, V]) GetSetFn(key K, fn func() V, conds ...func(V) bool) (V, boo
 			var empty V
 			return empty, false
 		}
+	}
+
+	if !exists {
+		core.values[key] = v
 	}
 
 	core.mu.Unlock()
@@ -381,6 +460,22 @@ func (mp *Map[K, V]) RemoveCond(key K, cond func(V) bool) (V, bool) {
 	return v, exists
 }
 
+func (mp *Map[K, V]) Hold(key K, fn func(value V)) {
+	if mp == nil {
+		return
+	}
+	core := mp.init()
+
+	core.mu.Lock()
+
+	value, ok := core.values[key]
+	if ok {
+		fn(value)
+	}
+
+	core.mu.Unlock()
+}
+
 func (mp *Map[K, V]) Modify(fn func(value *V) bool) mapValuesList[K, V] {
 	if mp == nil {
 		return nil
@@ -405,8 +500,21 @@ func (mp *Map[K, V]) Modify(fn func(value *V) bool) mapValuesList[K, V] {
 	return modified
 }
 
-func (core *mapCore[K, V]) clearUnsafe() {
-	core.values = map[K]V{}
+func (mp *Map[K, V]) SyncMap(values map[K]V, replace bool) {
+	if mp == nil {
+		return
+	}
+
+	core := mp.init()
+	core.mu.Lock()
+
+	if replace {
+		core.values = values
+	} else {
+		maps.Copy(core.values, values)
+	}
+
+	core.mu.Unlock()
 }
 
 func (mp *Map[K, V]) Clear() {
@@ -418,6 +526,10 @@ func (mp *Map[K, V]) Clear() {
 	core.mu.Lock()
 	core.clearUnsafe()
 	core.mu.Unlock()
+}
+
+func (core *mapCore[K, V]) clearUnsafe() {
+	core.values = map[K]V{}
 }
 
 func (mp Map[K, V]) MarshalJSON() ([]byte, error) {
@@ -461,17 +573,20 @@ func (mp *Map[K, V]) IsZero() bool {
 	return len(core.values) == 0
 }
 
-func (mp *Map[K, V]) init() *mapCore[K, V] {
-	addr := (*unsafe.Pointer)(unsafe.Pointer(&mp.rawCore))
-	core := atomic.LoadPointer(addr)
-
-	if core == nil {
-		newCore := unsafe.Pointer(newMapCore[K, V]())
-		atomic.CompareAndSwapPointer(addr, nil, newCore)
-		return mp.init()
+func (mp *Map[K, V]) load() *mapCore[K, V] {
+	if mp == nil {
+		return nil
 	}
+	return (*atomic.Pointer[mapCore[K, V]])(unsafe.Pointer(&mp.rawCore)).Load()
+}
 
-	return (*mapCore[K, V])(core)
+func (mp *Map[K, V]) init() *mapCore[K, V] {
+	if core := mp.load(); core != nil {
+		return core
+	}
+	addr := (*atomic.Pointer[mapCore[K, V]])(unsafe.Pointer(&mp.rawCore))
+	addr.CompareAndSwap(nil, newMapCore[K, V]())
+	return addr.Load()
 }
 
 func newMapCore[K comparable, V any]() *mapCore[K, V] {

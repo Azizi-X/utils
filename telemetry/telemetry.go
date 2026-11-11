@@ -2,6 +2,7 @@ package telemetry
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -29,7 +30,7 @@ type Sending struct {
 }
 
 type Telemetry struct {
-	debounce func(f func())
+	debounce *utils.Debouncer
 	callback func(handle Handle) error
 	onFlush  func(sending Sending) error
 	backend  string
@@ -50,39 +51,37 @@ func (handle *Handle) Unmarshal(v any) error {
 func (a *Telemetry) Flush() error {
 	a.mu.Lock()
 
-	defer func() {
-		a.sending.Events = nil
-		a.mu.Unlock()
-	}()
+	sending := a.sending
+	onFlush := a.onFlush
+	backend := a.backend
 
-	if a.backend == "" && a.onFlush == nil {
+	a.sending.Events = nil
+
+	a.mu.Unlock()
+
+	if backend == "" && onFlush == nil {
 		return errors.New("backend is not set")
-	} else if len(a.sending.Events) == 0 {
+	} else if len(sending.Events) == 0 {
 		return nil
 	}
 
-	if a.onFlush != nil {
-		err := a.onFlush(a.sending)
-
-		if err != nil {
+	if onFlush != nil {
+		if err := onFlush(sending); err != nil {
 			return err
-		}
-
-		if a.backend == "" {
+		} else if backend == "" {
 			return nil
 		}
 	}
 
-	payload, err := json.Marshal(a.sending)
+	payload, err := json.Marshal(sending)
 	if err != nil {
 		return err
 	}
 
-	resp, err := defaultHTTP.Post(a.backend, "application/json", bytes.NewBuffer(payload))
+	resp, err := defaultHTTP.Post(backend, "application/json", bytes.NewReader(payload))
 	if err != nil {
 		return err
 	}
-
 	defer resp.Body.Close()
 
 	return nil
@@ -103,7 +102,7 @@ func (a *Telemetry) Publish(t string, properties any) error {
 		Properties: properties,
 	})
 
-	a.debounce(func() {
+	a.debounce.Do(func() {
 		a.Flush()
 	})
 
@@ -131,10 +130,10 @@ func (a *Telemetry) SetToken(token string) *Telemetry {
 	return a
 }
 
-func (a *Telemetry) SetDebounce(after time.Duration) *Telemetry {
+func (a *Telemetry) SetDebounce(ctx context.Context, after time.Duration) *Telemetry {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.debounce = utils.NewDebouncer(after)
+	a.debounce = utils.NewDebouncer(ctx, after)
 	return a
 }
 
