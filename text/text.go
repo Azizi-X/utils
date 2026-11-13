@@ -1,6 +1,8 @@
 package text
 
 import (
+	"fmt"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -65,4 +67,32 @@ func FuzzyMatchesAny(query string, values ...string) bool {
 		}
 	}
 	return false
+}
+
+func WithCommas[T ~string | ~int | ~int32 | ~int64 | ~float32 | ~float64](v T) string {
+	s := fmt.Sprint(v)
+	if _, err := strconv.ParseInt(s, 10, 64); err != nil {
+		return s
+	}
+
+	return formatWithCommas(s)
+}
+
+func formatWithCommas(s string) string {
+	if len(s) == 0 {
+		return s
+	}
+
+	var sign string
+	if s[0] == '-' || s[0] == '+' {
+		sign = s[:1]
+		s = s[1:]
+	}
+
+	n := len(s)
+	if n < 4 {
+		return sign + s
+	}
+
+	return sign + formatWithCommas(s[:n-3]) + "," + s[n-3:]
 }
