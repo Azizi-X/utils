@@ -118,10 +118,6 @@ func (e *Event[T, Z]) addCallback(idx int, fn Z, ctx *utils.Context, keys ...Key
 }
 
 func (e *Event[T, Z]) removeCallback(ctx *utils.Context, keys ...Key) {
-	if ctx != nil {
-		ctx.CancelWithErr(ErrCanceled)
-	}
-
 	isMatch := func(cb *callback[T, Z]) bool {
 		if len(keys) > 0 && slices.Equal(cb.Keys, keys) {
 			return true

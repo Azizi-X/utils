@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"sync"
 	"time"
 )
 
@@ -16,6 +17,7 @@ type Context struct {
 	reason       string
 	err          error
 	canceled     bool
+	mu           sync.RWMutex
 }
 
 func (ctx *Context) NewCtx() *Context {
@@ -27,6 +29,8 @@ func (ctx *Context) NewCtxTimeout(timeout time.Duration) *Context {
 }
 
 func (ctx *Context) Err() error {
+	ctx.mu.RLock()
+	defer ctx.mu.RUnlock()
 	return cmp.Or(ctx.err, ctx.context.Err())
 }
 
@@ -39,6 +43,8 @@ func (ctx *Context) Wait() {
 }
 
 func (ctx *Context) Done() bool {
+	ctx.mu.RLock()
+	defer ctx.mu.RUnlock()
 	return ctx.canceled
 }
 
@@ -55,10 +61,15 @@ func (ctx *Context) IsE(err error) bool {
 }
 
 func (ctx *Context) IsR(reason string) bool {
+	ctx.mu.RLock()
+	defer ctx.mu.RUnlock()
 	return ctx.reason == reason
 }
 
 func (ctx *Context) SetOnCancel(fn func(error)) {
+	ctx.mu.Lock()
+	defer ctx.mu.Unlock()
+
 	if ctx.stopOnCancel != nil {
 		ctx.stopOnCancel()
 		ctx.stopOnCancel = nil
@@ -72,29 +83,32 @@ func (ctx *Context) SetOnCancel(fn func(error)) {
 }
 
 func (ctx *Context) CancelWithErr(err error) {
-	if err == nil {
-		ctx.Cancel()
-		return
-	}
+	ctx.cancel(err, "")
+}
+
+func (ctx *Context) CancelWithReason(reason string) {
+	ctx.cancel(errors.New(reason), reason)
+}
+
+func (ctx *Context) Cancel() {
+	ctx.cancel(nil, "")
+}
+
+func (ctx *Context) cancel(err error, reason string) {
+	ctx.mu.Lock()
+	defer ctx.mu.Unlock()
 
 	if ctx.err == nil {
 		ctx.err = err
 	}
 
-	ctx.CancelWithReason(ctx.err.Error())
-}
-
-func (ctx *Context) CancelWithReason(reason string) {
 	if ctx.reason == "" {
+		if reason == "" && ctx.err != nil {
+			reason = ctx.err.Error()
+		}
 		ctx.reason = reason
 	}
-	if ctx.err == nil {
-		ctx.err = errors.New(reason)
-	}
-	ctx.Cancel()
-}
 
-func (ctx *Context) Cancel() {
 	ctx.canceled = true
 	ctx.cancelFunc()
 }
